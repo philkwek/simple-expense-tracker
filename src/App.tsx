@@ -11,11 +11,12 @@ import { calculatePeriodWindow } from './utils/periodCalculator';
 import { subscribeToAuth } from './services/authService';
 import {
   addExpense,
+  batchUpdateExpenses,
   deleteExpense,
+  ExpenseUpdateEntry,
   restoreExpense,
   subscribeToPeriodExpenses,
   subscribeToSettings,
-  updateExpense,
   updateUserSettings,
 } from './services/expenseService';
 import { BudgetCard } from './components/BudgetCard';
@@ -110,18 +111,9 @@ export function App() {
     }
   };
 
-  const handleUpdateExpense = async (
-    id: string,
-    updates: Partial<Pick<ExpenseItem, 'title' | 'amount' | 'timestamp' | 'hasTime'>>,
-  ) => {
-    const existing = expenses.find((item) => item.id === id);
-    if (!existing) return;
-    await updateExpense(user.uid, id, {
-      title: updates.title ?? existing.title,
-      amount: updates.amount ?? existing.amount,
-      timestamp: updates.timestamp ?? existing.timestamp,
-      hasTime: updates.hasTime ?? existing.hasTime,
-    });
+  const handleBatchUpdateExpenses = async (updates: ExpenseUpdateEntry[]) => {
+    if (updates.length === 0) return;
+    await batchUpdateExpenses(user.uid, updates);
   };
 
   const handleDeleteExpense = async (item: ExpenseItem) => {
@@ -225,11 +217,11 @@ export function App() {
             onAddExpense={handleAddExpense}
           />
 
-          {/* 3. Itemized Period Feed (Grouped by Day, Swipe-to-Delete, Inline Edit) */}
+          {/* 3. Itemized Period Feed (Grouped by Day, Swipe-to-Delete, Batch Edit Mode) */}
           <ExpenseList
             expenses={expenses}
             currency={settings.currency}
-            onUpdateExpense={handleUpdateExpense}
+            onBatchUpdateExpenses={handleBatchUpdateExpenses}
             onDeleteExpense={handleDeleteExpense}
           />
         </main>

@@ -8,8 +8,8 @@ import {
   query,
   setDoc,
   Timestamp,
-  updateDoc,
   where,
+  writeBatch,
 } from 'firebase/firestore';
 import { db, isFirebaseConfigured } from '../lib/firebase';
 import {
@@ -331,6 +331,14 @@ export async function addExpense(
   };
 }
 
+export interface ExpenseUpdateEntry {
+  id: string;
+  title: string;
+  amount: number;
+  timestamp: number;
+  hasTime?: boolean;
+}
+
 /**
  * Updates an existing expense in `users/{userId}/expenses/{expenseId}`.
  */
@@ -344,36 +352,56 @@ export async function updateExpense(
     hasTime?: boolean;
   },
 ): Promise<void> {
-  const cleanTitle = updates.title.trim().slice(0, 120) || 'Expense';
-  const cleanAmount = Math.max(0, Math.round(updates.amount * 100) / 100);
-  const cleanTimestamp = Math.floor(updates.timestamp);
-  const cleanHasTime =
-    typeof updates.hasTime === 'boolean' ? updates.hasTime : true;
+  await batchUpdateExpenses(userId, [{ id: expenseId, ...updates }]);
+}
+
+/**
+ * Commits multiple expense edits in a single atomic Firestore writeBatch call.
+ */
+export async function batchUpdateExpenses(
+  userId: string,
+  updates: ExpenseUpdateEntry[],
+): Promise<void> {
+  if (updates.length === 0) return;
+
+  const normalized = updates.map((u) => ({
+    id: u.id,
+    title: u.title.trim().slice(0, 120) || 'Expense',
+    amount: Math.max(0, Math.round(u.amount * 100) / 100),
+    timestamp: Math.floor(u.timestamp),
+    hasTime: typeof u.hasTime === 'boolean' ? u.hasTime : true,
+  }));
 
   if (!isFirebaseConfigured || !db || userId === 'local-guest') {
+    const updateMap = new Map(normalized.map((u) => [u.id, u]));
     const existing = readLocalExpenses(userId);
-    const next = existing.map((item) =>
-      item.id === expenseId
+    const next = existing.map((item) => {
+      const match = updateMap.get(item.id);
+      return match
         ? {
             ...item,
-            title: cleanTitle,
-            amount: cleanAmount,
-            timestamp: cleanTimestamp,
-            hasTime: cleanHasTime,
+            title: match.title,
+            amount: match.amount,
+            timestamp: match.timestamp,
+            hasTime: match.hasTime,
           }
-        : item,
-    );
+        : item;
+    });
     writeLocalExpenses(userId, next);
     return;
   }
 
-  const expenseRef = doc(db, 'users', userId, 'expenses', expenseId);
-  await updateDoc(expenseRef, {
-    title: cleanTitle,
-    amount: cleanAmount,
-    timestamp: cleanTimestamp,
-    hasTime: cleanHasTime,
-  });
+  const batch = writeBatch(db);
+  for (const item of normalized) {
+    const expenseRef = doc(db, 'users', userId, 'expenses', item.id);
+    batch.update(expenseRef, {
+      title: item.title,
+      amount: item.amount,
+      timestamp: item.timestamp,
+      hasTime: item.hasTime,
+    });
+  }
+  await batch.commit();
 }
 
 /**

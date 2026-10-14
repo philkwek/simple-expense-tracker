@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence, useMotionValue, animate } from 'framer-motion';
 import {
   Trash2,
@@ -10,6 +10,7 @@ import {
   Calendar,
 } from 'lucide-react';
 import { ExpenseItem } from '../types/expense';
+import { ExpenseUpdateEntry } from '../services/expenseService';
 import {
   formatCurrency,
   groupExpensesByDay,
@@ -24,53 +25,58 @@ import {
   selectNearestSnapTarget,
 } from '../lib/motion';
 
+export interface ExpenseDraft {
+  title: string;
+  amountStr: string;
+  date: string;
+  time: string;
+}
+
 interface ExpenseListProps {
   expenses: ExpenseItem[];
   currency: string;
-  onUpdateExpense: (
-    id: string,
-    updates: Partial<
-      Pick<ExpenseItem, 'title' | 'amount' | 'timestamp' | 'hasTime'>
-    >,
+  onBatchUpdateExpenses: (
+    updates: ExpenseUpdateEntry[],
   ) => Promise<void> | void;
   onDeleteExpense: (expense: ExpenseItem) => Promise<void> | void;
 }
 
-const ACTION_REVEAL_WIDTH = 132;
-const FULL_SWIPE_DELETE_THRESHOLD = -210;
+const ACTION_REVEAL_WIDTH = 72;
+const FULL_SWIPE_DELETE_THRESHOLD = -180;
+
+function createDraftFromItem(item: ExpenseItem, currency: string): ExpenseDraft {
+  return {
+    title: item.title,
+    amountStr:
+      currency === 'JPY'
+        ? String(Math.round(item.amount))
+        : item.amount.toFixed(2),
+    date: toDateInputValue(item.timestamp),
+    time: item.hasTime === false ? '' : toTimeInputValue(item.timestamp),
+  };
+}
 
 interface ExpenseRowProps {
   item: ExpenseItem;
   currency: string;
+  isEditMode: boolean;
+  draft: ExpenseDraft;
+  onDraftChange: (id: string, patch: Partial<ExpenseDraft>) => void;
   isOpenRow: boolean;
   onOpenChange: (id: string | null) => void;
-  onUpdate: (
-    id: string,
-    updates: Partial<
-      Pick<ExpenseItem, 'title' | 'amount' | 'timestamp' | 'hasTime'>
-    >,
-  ) => Promise<void> | void;
   onDelete: (expense: ExpenseItem) => Promise<void> | void;
 }
 
 const ExpenseRow: React.FC<ExpenseRowProps> = ({
   item,
   currency,
+  isEditMode,
+  draft,
+  onDraftChange,
   isOpenRow,
   onOpenChange,
-  onUpdate,
   onDelete,
 }) => {
-  const [isEditing, setIsEditing] = useState(false);
-  const [editTitle, setEditTitle] = useState(item.title);
-  const [editAmountStr, setEditAmountStr] = useState(item.amount.toFixed(2));
-  const [editDate, setEditDate] = useState(() =>
-    toDateInputValue(item.timestamp),
-  );
-  const [editTime, setEditTime] = useState(() =>
-    item.hasTime === false ? '' : toTimeInputValue(item.timestamp),
-  );
-
   const x = useMotionValue(0);
   const pointerStartRef = useRef<{
     x: number;
@@ -83,11 +89,11 @@ const ExpenseRow: React.FC<ExpenseRowProps> = ({
   } | null>(null);
 
   // Sync open/closed state from parent
-  React.useEffect(() => {
-    const target = isOpenRow ? -ACTION_REVEAL_WIDTH : 0;
+  useEffect(() => {
+    const target = isOpenRow && !isEditMode ? -ACTION_REVEAL_WIDTH : 0;
     const controls = animate(x, target, SPRING_CRITICALLY_DAMPED);
     return () => controls.stop();
-  }, [isOpenRow, x]);
+  }, [isOpenRow, isEditMode, x]);
 
   const showTime = item.hasTime !== false;
   const timeFormatted = showTime
@@ -97,37 +103,8 @@ const ExpenseRow: React.FC<ExpenseRowProps> = ({
       }).format(new Date(item.timestamp))
     : null;
 
-  const startEditing = () => {
-    onOpenChange(null);
-    setEditTitle(item.title);
-    setEditAmountStr(
-      currency === 'JPY'
-        ? String(Math.round(item.amount))
-        : item.amount.toFixed(2),
-    );
-    setEditDate(toDateInputValue(item.timestamp));
-    setEditTime(item.hasTime === false ? '' : toTimeInputValue(item.timestamp));
-    setIsEditing(true);
-  };
-
-  const handleSaveEdit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const trimmed = editTitle.trim();
-    const parsedAmount = parseFloat(editAmountStr);
-    if (!trimmed || !Number.isFinite(parsedAmount) || parsedAmount <= 0) return;
-
-    const hasSpecificTime = editTime.trim().length > 0;
-    await onUpdate(item.id, {
-      title: trimmed,
-      amount: Math.round(parsedAmount * 100) / 100,
-      timestamp: fromDateAndTimeInputs(editDate, editTime, item.timestamp),
-      hasTime: hasSpecificTime,
-    });
-    setIsEditing(false);
-  };
-
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (isEditing) return;
+    if (isEditMode) return;
     // Only primary touch/mouse button
     if (e.button !== 0) return;
 
@@ -144,7 +121,7 @@ const ExpenseRow: React.FC<ExpenseRowProps> = ({
 
   const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
     const state = pointerStartRef.current;
-    if (!state || isEditing) return;
+    if (!state || isEditMode) return;
 
     const dx = e.clientX - state.x;
     const dy = e.clientY - state.y;
@@ -198,7 +175,7 @@ const ExpenseRow: React.FC<ExpenseRowProps> = ({
     // Full swipe-through delete when pulled far left or thrown hard left
     if (
       currentX <= FULL_SWIPE_DELETE_THRESHOLD ||
-      (currentX < -95 && vx < -950)
+      (currentX < -85 && vx < -950)
     ) {
       animate(x, -360, SPRING_MOMENTUM);
       onDelete(item);
@@ -229,26 +206,29 @@ const ExpenseRow: React.FC<ExpenseRowProps> = ({
       transition={SPRING_CRITICALLY_DAMPED}
       className="relative overflow-hidden rounded-2xl bg-white/80 dark:bg-neutral-900/80 border border-black/[0.05] dark:border-white/[0.07]"
     >
-      {isEditing ? (
-        <form onSubmit={handleSaveEdit} className="p-3.5 space-y-2.5">
+      {isEditMode ? (
+        <div className="p-3.5 space-y-2.5">
           <div className="flex items-center gap-2">
             <input
               type="text"
-              value={editTitle}
+              value={draft.title}
               maxLength={120}
-              onChange={(e) => setEditTitle(e.target.value)}
-              aria-label="Edit item name"
+              onChange={(e) =>
+                onDraftChange(item.id, { title: e.target.value })
+              }
+              aria-label={`Edit item name for ${item.title}`}
               className="flex-1 min-w-0 h-10 px-3 rounded-xl bg-black/[0.04] dark:bg-white/[0.07] text-[16px] text-neutral-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#007AFF]/40"
-              autoFocus
             />
             <input
               type="text"
               inputMode="decimal"
-              value={editAmountStr}
+              value={draft.amountStr}
               onChange={(e) =>
-                setEditAmountStr(e.target.value.replace(/[^0-9.]/g, ''))
+                onDraftChange(item.id, {
+                  amountStr: e.target.value.replace(/[^0-9.]/g, ''),
+                })
               }
-              aria-label="Edit cost"
+              aria-label={`Edit cost for ${item.title}`}
               className="w-24 h-10 px-3 rounded-xl bg-black/[0.04] dark:bg-white/[0.07] text-[16px] font-semibold tabular-nums text-right text-neutral-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#007AFF]/40"
             />
           </div>
@@ -259,9 +239,11 @@ const ExpenseRow: React.FC<ExpenseRowProps> = ({
                 <Calendar className="w-3.5 h-3.5 text-neutral-400 absolute left-2.5 pointer-events-none" />
                 <input
                   type="date"
-                  aria-label="Edit date"
-                  value={editDate}
-                  onChange={(e) => setEditDate(e.target.value)}
+                  aria-label={`Edit date for ${item.title}`}
+                  value={draft.date}
+                  onChange={(e) =>
+                    onDraftChange(item.id, { date: e.target.value })
+                  }
                   className="w-full h-9 pl-7 pr-2 rounded-xl bg-black/[0.04] dark:bg-white/[0.07] text-[12px] tabular-nums text-neutral-700 dark:text-neutral-200 focus:outline-none focus:ring-2 focus:ring-[#007AFF]/40"
                 />
               </div>
@@ -270,15 +252,17 @@ const ExpenseRow: React.FC<ExpenseRowProps> = ({
                 <Clock className="w-3.5 h-3.5 text-neutral-400 absolute left-2.5 pointer-events-none" />
                 <input
                   type="time"
-                  aria-label="Edit optional time"
-                  value={editTime}
-                  onChange={(e) => setEditTime(e.target.value)}
+                  aria-label={`Edit optional time for ${item.title}`}
+                  value={draft.time}
+                  onChange={(e) =>
+                    onDraftChange(item.id, { time: e.target.value })
+                  }
                   className="w-full h-9 pl-7 pr-6 rounded-xl bg-black/[0.04] dark:bg-white/[0.07] text-[12px] tabular-nums text-neutral-700 dark:text-neutral-200 focus:outline-none focus:ring-2 focus:ring-[#007AFF]/40"
                 />
-                {editTime && (
+                {draft.time && (
                   <button
                     type="button"
-                    onClick={() => setEditTime('')}
+                    onClick={() => onDraftChange(item.id, { time: '' })}
                     aria-label="Clear time (whole day)"
                     className="pressable absolute right-1.5 p-0.5 rounded-full text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200"
                   >
@@ -288,26 +272,16 @@ const ExpenseRow: React.FC<ExpenseRowProps> = ({
               </div>
             </div>
 
-            <div className="flex items-center gap-1.5 shrink-0">
-              <button
-                type="button"
-                onClick={() => setIsEditing(false)}
-                aria-label="Cancel editing"
-                className="pressable touch-target h-9 w-9 rounded-xl bg-black/[0.05] dark:bg-white/[0.08] text-neutral-600 dark:text-neutral-300 flex items-center justify-center"
-              >
-                <X className="w-4 h-4" />
-              </button>
-              <button
-                type="submit"
-                aria-label="Save changes"
-                className="pressable touch-target h-9 px-3 rounded-xl bg-[#007AFF] dark:bg-[#0A84FF] text-white text-[13px] font-semibold inline-flex items-center gap-1"
-              >
-                <Check className="w-4 h-4" />
-                <span>Save</span>
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={() => onDelete(item)}
+              aria-label={`Delete ${item.title}`}
+              className="pressable touch-target h-9 w-9 shrink-0 rounded-xl bg-black/[0.04] dark:bg-white/[0.07] text-neutral-400 hover:text-[#FF3B30] dark:hover:text-[#FF453A] hover:bg-[#FF3B30]/10 flex items-center justify-center"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
           </div>
-        </form>
+        </div>
       ) : (
         <div className="relative">
           {/* Background Swipe Action Tray */}
@@ -316,15 +290,6 @@ const ExpenseRow: React.FC<ExpenseRowProps> = ({
             className="absolute inset-y-0 right-0 flex items-stretch"
             style={{ width: ACTION_REVEAL_WIDTH }}
           >
-            <button
-              type="button"
-              onClick={startEditing}
-              aria-label={`Edit ${item.title}`}
-              className="pressable flex-1 bg-[#007AFF] dark:bg-[#0A84FF] text-white flex flex-col items-center justify-center gap-0.5 text-[11px] font-semibold"
-            >
-              <Pencil className="w-4 h-4" />
-              <span>Edit</span>
-            </button>
             <button
               type="button"
               onClick={() => onDelete(item)}
@@ -367,31 +332,17 @@ const ExpenseRow: React.FC<ExpenseRowProps> = ({
                 {formatCurrency(item.amount, currency)}
               </span>
 
-              {/* Quick accessible action buttons for non-swipe or desktop pointers */}
-              <div className="flex items-center gap-0.5 ml-1">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    startEditing();
-                  }}
-                  aria-label={`Edit ${item.title}`}
-                  className="pressable p-2 rounded-lg text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-black/[0.04] dark:hover:bg-white/[0.06]"
-                >
-                  <Pencil className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onDelete(item);
-                  }}
-                  aria-label={`Delete ${item.title}`}
-                  className="pressable p-2 rounded-lg text-neutral-400 hover:text-[#FF3B30] dark:hover:text-[#FF453A] hover:bg-[#FF3B30]/10"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDelete(item);
+                }}
+                aria-label={`Delete ${item.title}`}
+                className="pressable p-2 ml-0.5 rounded-lg text-neutral-400 hover:text-[#FF3B30] dark:hover:text-[#FF453A] hover:bg-[#FF3B30]/10"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
             </div>
           </motion.div>
         </div>
@@ -403,10 +354,112 @@ const ExpenseRow: React.FC<ExpenseRowProps> = ({
 export const ExpenseList: React.FC<ExpenseListProps> = ({
   expenses,
   currency,
-  onUpdateExpense,
+  onBatchUpdateExpenses,
   onDeleteExpense,
 }) => {
   const [openRowId, setOpenRowId] = useState<string | null>(null);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [drafts, setDrafts] = useState<Record<string, ExpenseDraft>>({});
+
+  // Keep draft entries populated if new expenses arrive while in edit mode
+  useEffect(() => {
+    if (!isEditMode) return;
+    setDrafts((prev) => {
+      const next = { ...prev };
+      let added = false;
+      for (const item of expenses) {
+        if (!next[item.id]) {
+          next[item.id] = createDraftFromItem(item, currency);
+          added = true;
+        }
+      }
+      return added ? next : prev;
+    });
+  }, [expenses, currency, isEditMode]);
+
+  const enterEditMode = () => {
+    setOpenRowId(null);
+    const initialDrafts: Record<string, ExpenseDraft> = {};
+    for (const item of expenses) {
+      initialDrafts[item.id] = createDraftFromItem(item, currency);
+    }
+    setDrafts(initialDrafts);
+    setIsEditMode(true);
+  };
+
+  const cancelEditMode = () => {
+    setIsEditMode(false);
+    setDrafts({});
+  };
+
+  const handleDraftChange = (id: string, patch: Partial<ExpenseDraft>) => {
+    setDrafts((prev) => ({
+      ...prev,
+      [id]: {
+        ...(prev[id] ?? { title: '', amountStr: '0', date: '', time: '' }),
+        ...patch,
+      },
+    }));
+  };
+
+  const handleSaveAllEdits = async () => {
+    if (isSaving) return;
+    setIsSaving(true);
+    try {
+      const changedUpdates: ExpenseUpdateEntry[] = [];
+
+      for (const item of expenses) {
+        const draft = drafts[item.id];
+        if (!draft) continue;
+
+        const trimmedTitle = draft.title.trim();
+        const parsedAmount = parseFloat(draft.amountStr);
+        if (
+          !trimmedTitle ||
+          !Number.isFinite(parsedAmount) ||
+          parsedAmount <= 0
+        ) {
+          continue;
+        }
+
+        const nextAmount = Math.round(parsedAmount * 100) / 100;
+        const nextHasTime = draft.time.trim().length > 0;
+        const nextTimestamp = fromDateAndTimeInputs(
+          draft.date,
+          draft.time,
+          item.timestamp,
+        );
+        const prevHasTime = item.hasTime !== false;
+
+        const isModified =
+          trimmedTitle !== item.title ||
+          Math.abs(nextAmount - item.amount) > 0.001 ||
+          nextTimestamp !== item.timestamp ||
+          nextHasTime !== prevHasTime;
+
+        if (isModified) {
+          changedUpdates.push({
+            id: item.id,
+            title: trimmedTitle,
+            amount: nextAmount,
+            timestamp: nextTimestamp,
+            hasTime: nextHasTime,
+          });
+        }
+      }
+
+      if (changedUpdates.length > 0) {
+        await onBatchUpdateExpenses(changedUpdates);
+      }
+
+      setIsEditMode(false);
+      setDrafts({});
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const dayGroups = groupExpensesByDay(expenses);
 
   if (expenses.length === 0) {
@@ -431,7 +484,51 @@ export const ExpenseList: React.FC<ExpenseListProps> = ({
   }
 
   return (
-    <div className="space-y-5" aria-label="Itemized expenses">
+    <div className="space-y-4" aria-label="Itemized expenses">
+      {/* Top List Toolbar with Edit Mode Toggle */}
+      <div className="flex items-center justify-between px-1.5">
+        <span className="text-[13px] font-semibold tracking-tight text-neutral-700 dark:text-neutral-200">
+          {isEditMode ? 'Editing Expenses' : 'Expenses'}
+        </span>
+
+        <div className="flex items-center gap-1.5">
+          {isEditMode ? (
+            <>
+              <button
+                type="button"
+                onClick={cancelEditMode}
+                disabled={isSaving}
+                aria-label="Cancel editing"
+                className="pressable h-8 px-2.5 rounded-lg bg-black/[0.05] dark:bg-white/[0.08] text-neutral-600 dark:text-neutral-300 text-[12px] font-medium inline-flex items-center gap-1"
+              >
+                <X className="w-3.5 h-3.5" />
+                <span>Cancel</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveAllEdits}
+                disabled={isSaving}
+                aria-label="Save all edits"
+                className="pressable h-8 px-3 rounded-lg bg-[#007AFF] dark:bg-[#0A84FF] text-white text-[12px] font-semibold inline-flex items-center gap-1 shadow-sm shadow-[#007AFF]/20"
+              >
+                <Check className="w-3.5 h-3.5" />
+                <span>{isSaving ? 'Saving...' : 'Save'}</span>
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={enterEditMode}
+              aria-label="Toggle edit mode"
+              title="Edit expenses"
+              className="pressable p-2 rounded-lg text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200 hover:bg-black/[0.04] dark:hover:bg-white/[0.06]"
+            >
+              <Pencil className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+      </div>
+
       <AnimatePresence initial={false}>
         {dayGroups.map((group) => (
           <motion.section
@@ -460,9 +557,13 @@ export const ExpenseList: React.FC<ExpenseListProps> = ({
                     key={item.id}
                     item={item}
                     currency={currency}
+                    isEditMode={isEditMode}
+                    draft={
+                      drafts[item.id] ?? createDraftFromItem(item, currency)
+                    }
+                    onDraftChange={handleDraftChange}
                     isOpenRow={openRowId === item.id}
                     onOpenChange={setOpenRowId}
-                    onUpdate={onUpdateExpense}
                     onDelete={onDeleteExpense}
                   />
                 ))}
