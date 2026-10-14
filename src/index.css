@@ -1,3 +1,214 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  :root {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", system-ui, sans-serif;
+    line-height: 1.5;
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  html,
+  body {
+    overscroll-behavior-y: none;
+  }
+
+  /* Prevent iOS Safari auto-zoom on input focus by guaranteeing >= 16px on mobile */
+  input,
+  select,
+  textarea {
+    font-size: max(16px, 1rem);
+  }
+}
+
+@layer components {
+  /* §15 Optical Typography — size-specific tracking & leading */
+  .type-display {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif;
+    font-size: clamp(2.25rem, 8vw, 3.125rem);
+    line-height: 1.04;
+    letter-spacing: -0.028em;
+    font-weight: 700;
+    font-optical-sizing: auto;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .type-title {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", system-ui, sans-serif;
+    font-size: 1.1875rem;
+    line-height: 1.25;
+    letter-spacing: -0.016em;
+    font-weight: 600;
+    font-optical-sizing: auto;
+  }
+
+  .type-body {
+    font-size: 1rem;
+    line-height: 1.45;
+    letter-spacing: -0.008em;
+  }
+
+  /* Vibrant small text over translucent surfaces: slightly heavier weight + positive tracking */
+  .type-caption {
+    font-size: 0.75rem;
+    line-height: 1.35;
+    letter-spacing: 0.012em;
+    font-weight: 500;
+  }
+
+  /* §12 Materials & Depth — Translucent Glass with Specular Top Edge */
+  .apple-glass {
+    background: rgba(255, 255, 255, 0.72);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    border: 1px solid rgba(0, 0, 0, 0.06);
+    border-top: 1px solid rgba(255, 255, 255, 0.65);
+    box-shadow:
+      0 4px 24px -4px rgba(0, 0, 0, 0.04),
+      0 1px 2px 0 rgba(0, 0, 0, 0.02);
+  }
+
+  .apple-glass-heavy {
+    background: rgba(255, 255, 255, 0.82);
+    backdrop-filter: blur(28px) saturate(190%);
+    -webkit-backdrop-filter: blur(28px) saturate(190%);
+    border: 1px solid rgba(0, 0, 0, 0.06);
+    border-top: 1px solid rgba(255, 255, 255, 0.75);
+    box-shadow:
+      0 12px 36px -8px rgba(0, 0, 0, 0.07),
+      0 2px 6px -1px rgba(0, 0, 0, 0.03);
+  }
+
+  .apple-sheet {
+    background: rgba(250, 250, 252, 0.92);
+    backdrop-filter: blur(36px) saturate(200%);
+    -webkit-backdrop-filter: blur(36px) saturate(200%);
+    border-top: 1px solid rgba(255, 255, 255, 0.7);
+    box-shadow: 0 -12px 48px rgba(0, 0, 0, 0.14);
+  }
+
+  .apple-pill {
+    background: rgba(118, 118, 128, 0.12);
+  }
+
+  /* §1 Zero-Latency Direct Manipulation — respond on pointerdown */
+  .pressable {
+    transition: transform 100ms ease-out, background-color 120ms ease-out, opacity 120ms ease-out;
+    will-change: transform;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  .pressable:active:not(:disabled) {
+    transform: scale(0.97);
+  }
+
+  /* Mobile Safe Area Helpers */
+  .safe-top {
+    padding-top: max(0.75rem, env(safe-area-inset-top));
+  }
+
+  .safe-bottom {
+    padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
+  }
+
+  .safe-sheet-bottom {
+    padding-bottom: max(1.75rem, calc(env(safe-area-inset-bottom) + 0.75rem));
+  }
+
+  /* §10 Minimum 44x44pt Apple HIG touch target */
+  .touch-target {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}
+
+/* Dark mode adaptive material adjustments */
+@media (prefers-color-scheme: dark) {
+  .apple-glass {
+    background: rgba(28, 28, 30, 0.72);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-top: 1px solid rgba(255, 255, 255, 0.15);
+    box-shadow:
+      0 8px 28px -6px rgba(0, 0, 0, 0.45),
+      0 1px 2px 0 rgba(0, 0, 0, 0.3);
+  }
+
+  .apple-glass-heavy {
+    background: rgba(28, 28, 30, 0.84);
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-top: 1px solid rgba(255, 255, 255, 0.18);
+    box-shadow:
+      0 16px 40px -8px rgba(0, 0, 0, 0.6),
+      0 2px 8px 0 rgba(0, 0, 0, 0.4);
+  }
+
+  .apple-sheet {
+    background: rgba(24, 24, 27, 0.92);
+    border-top: 1px solid rgba(255, 255, 255, 0.16);
+    box-shadow: 0 -16px 56px rgba(0, 0, 0, 0.65);
+  }
+
+  .apple-pill {
+    background: rgba(118, 118, 128, 0.24);
+  }
+}
+
+/* §14 Accessibility: Reduced Motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 150ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .pressable:active:not(:disabled) {
+    transform: none !important;
+    opacity: 0.75;
+  }
+}
+
+/* §14 Accessibility: Reduced Transparency */
+@media (prefers-reduced-transparency: reduce) {
+  .apple-glass,
+  .apple-glass-heavy,
+  .apple-sheet {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    background: #ffffff !important;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    .apple-glass,
+    .apple-glass-heavy,
+    .apple-sheet {
+      background: #1c1c1e !important;
+    }
+  }
+}
+
+/* §14 Accessibility: Increased Contrast */
+@media (prefers-contrast: more) {
+  .apple-glass,
+  .apple-glass-heavy,
+  .apple-sheet {
+    border-width: 1.5px !important;
+    border-color: rgba(0, 0, 0, 0.35) !important;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    .apple-glass,
+    .apple-glass-heavy,
+    .apple-sheet {
+      border-color: rgba(255, 255, 255, 0.45) !important;
+    }
+  }
+}

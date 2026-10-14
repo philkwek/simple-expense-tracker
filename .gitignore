@@ -3,10 +3,11 @@ node_modules
 .pnp
 .pnp.js
 
-# Production build
+# Production build & TS cache
 dist
 dist-ssr
 *.local
+*.tsbuildinfo
 
 # Environment variables
 .env
