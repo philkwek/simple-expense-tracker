@@ -67,7 +67,7 @@ export const BudgetCard: React.FC<BudgetCardProps> = ({
       layout
       transition={SPRING_CRITICALLY_DAMPED}
       aria-label="Budget overview"
-      className="material-glass w-full rounded-2xl p-4 select-none"
+      className="w-full select-none"
     >
       {/* Top Bar: Active Cycle Navigation & Countdown Pill */}
       <div className="flex items-center justify-between gap-2 mb-4">

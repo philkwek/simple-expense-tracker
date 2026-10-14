@@ -137,7 +137,7 @@ export const ExpenseInputForm: React.FC<ExpenseInputFormProps> = ({
       transition={SPRING_CRITICALLY_DAMPED}
       onSubmit={handleSubmit}
       aria-label="Quick add expense"
-      className="material-glass w-full rounded-2xl p-4"
+      className="w-full"
     >
       {/* Primary 2-Input Quick Entry Row */}
       <div className="flex items-center gap-2">

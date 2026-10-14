@@ -161,63 +161,64 @@ export function App() {
     <div className="min-h-dvh w-full bg-[#F5F5F7] dark:bg-black text-neutral-900 dark:text-neutral-100 selection:bg-[#007AFF]/20">
       {/* Mobile-First Centered Column Shell */}
       <div className="w-full max-w-md mx-auto min-h-dvh flex flex-col px-4 pt-3 pb-10 safe-top safe-bottom">
-        {/* Sticky Translucent App Header */}
-        <header className="sticky top-2 z-30 mb-4 w-full">
-          <div className="material-glass w-full rounded-2xl px-4 py-2.5 flex items-center justify-between gap-2">
-            {/* App Title */}
-            <div className="flex items-center min-w-0">
-              <span className="text-[16px] font-bold tracking-tight text-neutral-900 dark:text-white">
-                Expense Tracker
-              </span>
-            </div>
-
-            {/* Right Control: Account Management */}
-            <div className="flex items-center">
-              <button
-                type="button"
-                onClick={() => setIsAccountOpen(true)}
-                aria-label="Open account and cloud sync settings"
-                className={`pressable touch-target h-9 px-3 rounded-full text-[12px] font-semibold inline-flex items-center gap-1.5 transition-colors ${
-                  user.isAnonymous
-                    ? 'bg-black/[0.04] dark:bg-white/[0.07] text-neutral-700 dark:text-neutral-200'
-                    : 'bg-[#007AFF]/12 dark:bg-[#0A84FF]/20 text-[#007AFF] dark:text-[#0A84FF]'
-                }`}
-              >
-                {user.isAnonymous ? (
-                  <User className="w-3.5 h-3.5" />
-                ) : (
-                  <Cloud className="w-3.5 h-3.5" />
-                )}
-                <span className="max-w-[84px] truncate">{accountBadgeLabel}</span>
-              </button>
-            </div>
-          </div>
-        </header>
-
         {/* Main Content Stack */}
         <main className="flex-1 w-full space-y-4">
-          {/* 1. Dashboard Header Card */}
-          <BudgetCard
-            budget={settings.budget}
-            totalSpent={totalSpent}
-            currency={settings.currency}
-            period={periodWindow}
-            periodOffset={periodOffset}
-            onPrevPeriod={() => setPeriodOffset((prev) => prev - 1)}
-            onNextPeriod={() =>
-              setPeriodOffset((prev) => Math.min(0, prev + 1))
-            }
-            onResetPeriod={() => setPeriodOffset(0)}
-            onOpenSettings={() => setIsSettingsOpen(true)}
-          />
+          {/* Unified Top Dashboard Card (Header + Budget Overview + Quick Expense Input) */}
+          <div className="material-glass w-full rounded-2xl p-4 space-y-4">
+            {/* 1. App Header Row */}
+            <header className="flex items-center justify-between gap-2 pb-3.5 border-b border-black/[0.06] dark:border-white/[0.08]">
+              <div className="flex items-center min-w-0">
+                <span className="text-[16px] font-bold tracking-tight text-neutral-900 dark:text-white">
+                  Expense Tracker
+                </span>
+              </div>
 
-          {/* 2. Quick 2-Input Expense Form with Expandable Date/Time Override */}
-          <ExpenseInputForm
-            currency={settings.currency}
-            onAddExpense={handleAddExpense}
-          />
+              <div className="flex items-center">
+                <button
+                  type="button"
+                  onClick={() => setIsAccountOpen(true)}
+                  aria-label="Open account and cloud sync settings"
+                  className={`pressable touch-target h-9 px-3 rounded-full text-[12px] font-semibold inline-flex items-center gap-1.5 transition-colors ${
+                    user.isAnonymous
+                      ? 'bg-black/[0.04] dark:bg-white/[0.07] text-neutral-700 dark:text-neutral-200'
+                      : 'bg-[#007AFF]/12 dark:bg-[#0A84FF]/20 text-[#007AFF] dark:text-[#0A84FF]'
+                  }`}
+                >
+                  {user.isAnonymous ? (
+                    <User className="w-3.5 h-3.5" />
+                  ) : (
+                    <Cloud className="w-3.5 h-3.5" />
+                  )}
+                  <span className="max-w-[84px] truncate">{accountBadgeLabel}</span>
+                </button>
+              </div>
+            </header>
 
-          {/* 3. Itemized Period Feed (Grouped by Day, Swipe-to-Delete, Batch Edit Mode) */}
+            {/* 2. Dashboard Budget Overview */}
+            <BudgetCard
+              budget={settings.budget}
+              totalSpent={totalSpent}
+              currency={settings.currency}
+              period={periodWindow}
+              periodOffset={periodOffset}
+              onPrevPeriod={() => setPeriodOffset((prev) => prev - 1)}
+              onNextPeriod={() =>
+                setPeriodOffset((prev) => Math.min(0, prev + 1))
+              }
+              onResetPeriod={() => setPeriodOffset(0)}
+              onOpenSettings={() => setIsSettingsOpen(true)}
+            />
+
+            {/* 3. Quick 2-Input Expense Form with Expandable Date/Time Override */}
+            <div className="pt-4 border-t border-black/[0.06] dark:border-white/[0.08]">
+              <ExpenseInputForm
+                currency={settings.currency}
+                onAddExpense={handleAddExpense}
+              />
+            </div>
+          </div>
+
+          {/* Itemized Period Feed (Grouped by Day, Swipe-to-Delete, Batch Edit Mode) */}
           <ExpenseList
             expenses={expenses}
             currency={settings.currency}
