@@ -1,0 +1,142 @@
+rules_version = '2';
+
+// ===============================================================
+// Assumed Data Model
+// ===============================================================
+//
+// This security rules file enforces the following data structures:
+//
+// Collection: users/{userId}/settings/{settingId}
+// Document ID: 'preference'
+// Fields:
+//   - budget: number (required, 0 <= budget <= 100,000,000) - Periodic spending allowance
+//   - cadence: string (required, enum: 'daily' | 'weekly' | 'monthly') - Reset cycle cadence
+//   - periodStartDay: int (required, 0 <= periodStartDay <= 31) - Cycle cutoff hour/day/date
+//   - currency: string (required, size == 3) - 3-letter ISO currency code (e.g., 'USD')
+//   - updatedAt: number | timestamp (optional, >= 0 if number) - Last modification timestamp
+//
+// Collection: users/{userId}/expenses/{expenseId}
+// Document ID: Auto-generated or restored document ID (<= 128 chars)
+// Fields:
+//   - title: string (required, 1 <= size <= 120) - Expense description/merchant
+//   - amount: number (required, 0 <= amount <= 100,000,000) - Expense monetary amount
+//   - timestamp: number | timestamp (required, >= 0 if number) - Epoch ms when expense occurred
+//   - createdAt: number | timestamp (required, immutable on update, >= 0 if number) - Record creation time
+//
+// ===============================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    // Check if the user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Check if the authenticated user owns the user-scoped resource path
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Validate that all required fields exist on the incoming document
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    // Validate that the document contains only explicitly allowed fields
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    // Validate that immutable fields are not modified during an update
+    function areImmutableFieldsUnchanged(fields) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(fields);
+    }
+
+    // Validate string type and length bounds to prevent Resource Exhaustion / DoS
+    function validStringLength(field, minLen, maxLen) {
+      return request.resource.data[field] is string &&
+             request.resource.data[field].size() >= minLen &&
+             request.resource.data[field].size() <= maxLen;
+    }
+
+    // Validate numeric value (int or float) within inclusive range
+    function isValidNumberInRange(val, minVal, maxVal) {
+      return (val is int || val is float) &&
+             val >= minVal &&
+             val <= maxVal;
+    }
+
+    // Validate epoch milliseconds (int or float >= 0) or Firestore timestamp
+    function isValidTimeValue(val) {
+      return val is timestamp ||
+             ((val is int || val is float) && val >= 0 && val <= 99999999999999);
+    }
+
+    // ===============================================================
+    // Domain Validators (Used in BOTH create and update rules)
+    // ===============================================================
+
+    function isValidUserSettings(data) {
+      return hasOnlyAllowedFields(['budget', 'cadence', 'periodStartDay', 'currency', 'updatedAt']) &&
+             hasRequiredFields(['budget', 'cadence', 'periodStartDay', 'currency']) &&
+             isValidNumberInRange(data.budget, 0, 100000000) &&
+             data.cadence is string &&
+             data.cadence in ['daily', 'weekly', 'monthly'] &&
+             data.periodStartDay is int &&
+             data.periodStartDay >= 0 &&
+             data.periodStartDay <= 31 &&
+             validStringLength('currency', 3, 3) &&
+             (!('updatedAt' in data) || isValidTimeValue(data.updatedAt));
+    }
+
+    function isValidExpense(data) {
+      return hasOnlyAllowedFields(['title', 'amount', 'timestamp', 'createdAt']) &&
+             hasRequiredFields(['title', 'amount', 'timestamp', 'createdAt']) &&
+             validStringLength('title', 1, 120) &&
+             isValidNumberInRange(data.amount, 0, 100000000) &&
+             isValidTimeValue(data.timestamp) &&
+             isValidTimeValue(data.createdAt);
+    }
+
+    // ===============================================================
+    // Collection Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      // User Settings Document ('preference')
+      match /settings/{settingId} {
+        allow read: if isOwner(userId) && settingId == 'preference';
+        allow create: if isOwner(userId) &&
+                         settingId == 'preference' &&
+                         isValidUserSettings(request.resource.data);
+        allow update: if isOwner(userId) &&
+                         settingId == 'preference' &&
+                         isValidUserSettings(request.resource.data);
+        allow delete: if isOwner(userId) && settingId == 'preference';
+      }
+
+      // User Expenses Subcollection
+      match /expenses/{expenseId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) &&
+                         expenseId.size() <= 128 &&
+                         isValidExpense(request.resource.data);
+        allow update: if isOwner(userId) &&
+                         expenseId.size() <= 128 &&
+                         isValidExpense(request.resource.data) &&
+                         areImmutableFieldsUnchanged(['createdAt']);
+        allow delete: if isOwner(userId);
+      }
+    }
+
+    // Default deny all other paths
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
