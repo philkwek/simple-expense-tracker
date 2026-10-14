@@ -13,8 +13,9 @@ import { ExpenseItem } from '../types/expense';
 import {
   formatCurrency,
   groupExpensesByDay,
-  toDateTimeLocalValue,
-  fromDateTimeLocalValue,
+  toDateInputValue,
+  toTimeInputValue,
+  fromDateAndTimeInputs,
 } from '../utils/periodCalculator';
 import {
   SPRING_CRITICALLY_DAMPED,
@@ -28,7 +29,9 @@ interface ExpenseListProps {
   currency: string;
   onUpdateExpense: (
     id: string,
-    updates: Partial<Pick<ExpenseItem, 'title' | 'amount' | 'timestamp'>>,
+    updates: Partial<
+      Pick<ExpenseItem, 'title' | 'amount' | 'timestamp' | 'hasTime'>
+    >,
   ) => Promise<void> | void;
   onDeleteExpense: (expense: ExpenseItem) => Promise<void> | void;
 }
@@ -43,7 +46,9 @@ interface ExpenseRowProps {
   onOpenChange: (id: string | null) => void;
   onUpdate: (
     id: string,
-    updates: Partial<Pick<ExpenseItem, 'title' | 'amount' | 'timestamp'>>,
+    updates: Partial<
+      Pick<ExpenseItem, 'title' | 'amount' | 'timestamp' | 'hasTime'>
+    >,
   ) => Promise<void> | void;
   onDelete: (expense: ExpenseItem) => Promise<void> | void;
 }
@@ -59,8 +64,11 @@ const ExpenseRow: React.FC<ExpenseRowProps> = ({
   const [isEditing, setIsEditing] = useState(false);
   const [editTitle, setEditTitle] = useState(item.title);
   const [editAmountStr, setEditAmountStr] = useState(item.amount.toFixed(2));
-  const [editDateTime, setEditDateTime] = useState(() =>
-    toDateTimeLocalValue(item.timestamp),
+  const [editDate, setEditDate] = useState(() =>
+    toDateInputValue(item.timestamp),
+  );
+  const [editTime, setEditTime] = useState(() =>
+    item.hasTime === false ? '' : toTimeInputValue(item.timestamp),
   );
 
   const x = useMotionValue(0);
@@ -81,18 +89,24 @@ const ExpenseRow: React.FC<ExpenseRowProps> = ({
     return () => controls.stop();
   }, [isOpenRow, x]);
 
-  const timeFormatted = new Intl.DateTimeFormat('en-US', {
-    hour: 'numeric',
-    minute: '2-digit',
-  }).format(new Date(item.timestamp));
+  const showTime = item.hasTime !== false;
+  const timeFormatted = showTime
+    ? new Intl.DateTimeFormat('en-US', {
+        hour: 'numeric',
+        minute: '2-digit',
+      }).format(new Date(item.timestamp))
+    : null;
 
   const startEditing = () => {
     onOpenChange(null);
     setEditTitle(item.title);
     setEditAmountStr(
-      currency === 'JPY' ? String(Math.round(item.amount)) : item.amount.toFixed(2),
+      currency === 'JPY'
+        ? String(Math.round(item.amount))
+        : item.amount.toFixed(2),
     );
-    setEditDateTime(toDateTimeLocalValue(item.timestamp));
+    setEditDate(toDateInputValue(item.timestamp));
+    setEditTime(item.hasTime === false ? '' : toTimeInputValue(item.timestamp));
     setIsEditing(true);
   };
 
@@ -102,10 +116,12 @@ const ExpenseRow: React.FC<ExpenseRowProps> = ({
     const parsedAmount = parseFloat(editAmountStr);
     if (!trimmed || !Number.isFinite(parsedAmount) || parsedAmount <= 0) return;
 
+    const hasSpecificTime = editTime.trim().length > 0;
     await onUpdate(item.id, {
       title: trimmed,
       amount: Math.round(parsedAmount * 100) / 100,
-      timestamp: fromDateTimeLocalValue(editDateTime, item.timestamp),
+      timestamp: fromDateAndTimeInputs(editDate, editTime, item.timestamp),
+      hasTime: hasSpecificTime,
     });
     setIsEditing(false);
   };
@@ -238,15 +254,38 @@ const ExpenseRow: React.FC<ExpenseRowProps> = ({
           </div>
 
           <div className="flex items-center justify-between gap-2">
-            <div className="relative flex-1 flex items-center">
-              <Calendar className="w-3.5 h-3.5 text-neutral-400 absolute left-3 pointer-events-none" />
-              <input
-                type="datetime-local"
-                aria-label="Edit date and time"
-                value={editDateTime}
-                onChange={(e) => setEditDateTime(e.target.value)}
-                className="w-full h-9 pl-8 pr-2.5 rounded-xl bg-black/[0.04] dark:bg-white/[0.07] text-[13px] tabular-nums text-neutral-700 dark:text-neutral-200 focus:outline-none focus:ring-2 focus:ring-[#007AFF]/40"
-              />
+            <div className="flex-1 grid grid-cols-2 gap-1.5">
+              <div className="relative flex items-center">
+                <Calendar className="w-3.5 h-3.5 text-neutral-400 absolute left-2.5 pointer-events-none" />
+                <input
+                  type="date"
+                  aria-label="Edit date"
+                  value={editDate}
+                  onChange={(e) => setEditDate(e.target.value)}
+                  className="w-full h-9 pl-7 pr-2 rounded-xl bg-black/[0.04] dark:bg-white/[0.07] text-[12px] tabular-nums text-neutral-700 dark:text-neutral-200 focus:outline-none focus:ring-2 focus:ring-[#007AFF]/40"
+                />
+              </div>
+
+              <div className="relative flex items-center">
+                <Clock className="w-3.5 h-3.5 text-neutral-400 absolute left-2.5 pointer-events-none" />
+                <input
+                  type="time"
+                  aria-label="Edit optional time"
+                  value={editTime}
+                  onChange={(e) => setEditTime(e.target.value)}
+                  className="w-full h-9 pl-7 pr-6 rounded-xl bg-black/[0.04] dark:bg-white/[0.07] text-[12px] tabular-nums text-neutral-700 dark:text-neutral-200 focus:outline-none focus:ring-2 focus:ring-[#007AFF]/40"
+                />
+                {editTime && (
+                  <button
+                    type="button"
+                    onClick={() => setEditTime('')}
+                    aria-label="Clear time (whole day)"
+                    className="pressable absolute right-1.5 p-0.5 rounded-full text-neutral-400 hover:text-neutral-600 dark:hover:text-neutral-200"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
             </div>
 
             <div className="flex items-center gap-1.5 shrink-0">
@@ -315,10 +354,12 @@ const ExpenseRow: React.FC<ExpenseRowProps> = ({
               <div className="text-[15px] font-medium text-neutral-900 dark:text-neutral-100 truncate">
                 {item.title}
               </div>
-              <div className="inline-flex items-center gap-1 text-[12px] text-neutral-400 dark:text-neutral-500 mt-0.5 tabular-nums">
-                <Clock className="w-3 h-3" />
-                <span>{timeFormatted}</span>
-              </div>
+              {timeFormatted && (
+                <div className="inline-flex items-center gap-1 text-[12px] text-neutral-400 dark:text-neutral-500 mt-0.5 tabular-nums">
+                  <Clock className="w-3 h-3" />
+                  <span>{timeFormatted}</span>
+                </div>
+              )}
             </div>
 
             <div className="flex items-center gap-2 shrink-0">

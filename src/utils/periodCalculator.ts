@@ -364,6 +364,43 @@ export function toDateTimeLocalValue(timestampMs: number): string {
 }
 
 /**
+ * Converts epoch milliseconds to an HTML `<input type="date">` value string (`YYYY-MM-DD`).
+ */
+export function toDateInputValue(timestampMs: number): string {
+  const d = new Date(timestampMs);
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * Converts epoch milliseconds to an HTML `<input type="time">` value string (`HH:mm`).
+ */
+export function toTimeInputValue(timestampMs: number): string {
+  const d = new Date(timestampMs);
+  const hours = String(d.getHours()).padStart(2, '0');
+  const minutes = String(d.getMinutes()).padStart(2, '0');
+  return `${hours}:${minutes}`;
+}
+
+/**
+ * Combines a `YYYY-MM-DD` date input and an optional `HH:mm` time input into epoch milliseconds.
+ * When `timeValue` is omitted/empty (whole-day entry), defaults to 12:00 PM local time on that date
+ * so the purchase sits safely inside that calendar day regardless of daily cutoff hours.
+ */
+export function fromDateAndTimeInputs(
+  dateValue: string,
+  timeValue?: string,
+  fallback = Date.now(),
+): number {
+  if (!dateValue) return fallback;
+  const cleanTime = timeValue && timeValue.trim() ? timeValue.trim() : '12:00';
+  const parsed = new Date(`${dateValue}T${cleanTime}`).getTime();
+  return Number.isNaN(parsed) ? fallback : parsed;
+}
+
+/**
  * Parses an HTML `<input type="datetime-local">` string back into epoch milliseconds.
  */
 export function fromDateTimeLocalValue(value: string, fallback = Date.now()): number {

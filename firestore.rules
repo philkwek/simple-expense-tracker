@@ -22,6 +22,7 @@ rules_version = '2';
 //   - amount: number (required, 0 <= amount <= 100,000,000) - Expense monetary amount
 //   - timestamp: number | timestamp (required, >= 0 if number) - Epoch ms when expense occurred
 //   - createdAt: number | timestamp (required, immutable on update, >= 0 if number) - Record creation time
+//   - hasTime: bool (optional) - Whether a specific time of day was recorded (false for whole-day manual entries)
 //
 // ===============================================================
 
@@ -95,12 +96,13 @@ service cloud.firestore {
     }
 
     function isValidExpense(data) {
-      return hasOnlyAllowedFields(['title', 'amount', 'timestamp', 'createdAt']) &&
+      return hasOnlyAllowedFields(['title', 'amount', 'timestamp', 'createdAt', 'hasTime']) &&
              hasRequiredFields(['title', 'amount', 'timestamp', 'createdAt']) &&
              validStringLength('title', 1, 120) &&
              isValidNumberInRange(data.amount, 0, 100000000) &&
              isValidTimeValue(data.timestamp) &&
-             isValidTimeValue(data.createdAt);
+             isValidTimeValue(data.createdAt) &&
+             (!('hasTime' in data) || data.hasTime is bool);
     }
 
     // ===============================================================

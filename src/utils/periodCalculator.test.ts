@@ -2,9 +2,12 @@ import { describe, expect, it } from 'vitest';
 import {
   calculatePeriodWindow,
   formatCurrency,
+  fromDateAndTimeInputs,
   fromDateTimeLocalValue,
   groupExpensesByDay,
+  toDateInputValue,
   toDateTimeLocalValue,
+  toTimeInputValue,
 } from './periodCalculator';
 import { UserSettings } from '../types/expense';
 
@@ -188,6 +191,16 @@ describe('Budget Period Calculator (periodCalculator.ts)', () => {
       const str = toDateTimeLocalValue(sample);
       expect(str).toBe('2026-10-14T13:45');
       expect(fromDateTimeLocalValue(str)).toBe(sample);
+    });
+
+    it('defaults whole-day manual dates to 12:00 PM when time is omitted and preserves explicit times', () => {
+      const wholeDayMs = fromDateAndTimeInputs('2026-10-14', '');
+      expect(wholeDayMs).toBe(new Date(2026, 9, 14, 12, 0, 0, 0).getTime());
+      expect(toDateInputValue(wholeDayMs)).toBe('2026-10-14');
+
+      const withTimeMs = fromDateAndTimeInputs('2026-10-14', '18:30');
+      expect(withTimeMs).toBe(new Date(2026, 9, 14, 18, 30, 0, 0).getTime());
+      expect(toTimeInputValue(withTimeMs)).toBe('18:30');
     });
   });
 });

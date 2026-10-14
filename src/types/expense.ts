@@ -23,6 +23,8 @@ export interface ExpenseItem {
   timestamp: number;
   /** Epoch milliseconds of when the record was created */
   createdAt: number;
+  /** True when a specific time of day is recorded; false for whole-day manual date entries */
+  hasTime?: boolean;
 }
 
 export interface PeriodWindow {

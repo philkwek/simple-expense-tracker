@@ -6,7 +6,6 @@ import {
   RotateCcw,
   Clock,
   AlertTriangle,
-  Sparkles,
 } from 'lucide-react';
 import { PeriodWindow } from '../types/expense';
 import { formatCurrency } from '../utils/periodCalculator';
@@ -193,21 +192,14 @@ export const BudgetCard: React.FC<BudgetCardProps> = ({
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={onOpenSettings}
-            className="pressable text-left rounded-2xl bg-black/[0.025] dark:bg-white/[0.04] px-3.5 py-2.5 border border-black/[0.04] dark:border-white/[0.05] hover:bg-black/[0.04] dark:hover:bg-white/[0.06] transition-colors"
-          >
-            <div className="flex items-center justify-between">
-              <span className="text-[11px] font-medium uppercase tracking-[0.05em] text-neutral-400 dark:text-neutral-500">
-                Total Budget
-              </span>
-              <Sparkles className="w-3 h-3 text-neutral-400 dark:text-neutral-500" />
+          <div className="rounded-2xl bg-black/[0.025] dark:bg-white/[0.04] px-3.5 py-2.5 border border-black/[0.04] dark:border-white/[0.05]">
+            <div className="text-[11px] font-medium uppercase tracking-[0.05em] text-neutral-400 dark:text-neutral-500">
+              Total Budget
             </div>
             <div className="text-[16px] font-semibold tabular-nums tracking-tight text-neutral-800 dark:text-neutral-100 mt-0.5">
               {formatCurrency(safeBudget, currency)}
             </div>
-          </button>
+          </div>
         </div>
       </div>
     </motion.section>

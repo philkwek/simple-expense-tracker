@@ -1,12 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import {
-  SlidersHorizontal,
-  User,
-  Cloud,
-  CheckCircle2,
-  RefreshCw,
-  HardDrive,
-} from 'lucide-react';
+import { User, Cloud } from 'lucide-react';
 import {
   DEFAULT_USER_SETTINGS,
   ExpenseItem,
@@ -119,7 +112,7 @@ export function App() {
 
   const handleUpdateExpense = async (
     id: string,
-    updates: Partial<Pick<ExpenseItem, 'title' | 'amount' | 'timestamp'>>,
+    updates: Partial<Pick<ExpenseItem, 'title' | 'amount' | 'timestamp' | 'hasTime'>>,
   ) => {
     const existing = expenses.find((item) => item.id === id);
     if (!existing) return;
@@ -127,6 +120,7 @@ export function App() {
       title: updates.title ?? existing.title,
       amount: updates.amount ?? existing.amount,
       timestamp: updates.timestamp ?? existing.timestamp,
+      hasTime: updates.hasTime ?? existing.hasTime,
     });
   };
 
@@ -178,52 +172,15 @@ export function App() {
         {/* Sticky Translucent App Header */}
         <header className="sticky top-2 z-30 mb-4">
           <div className="material-glass rounded-full px-3.5 py-2 flex items-center justify-between gap-2">
-            {/* Brand & Sync Status Pill */}
-            <div className="flex items-center gap-2 min-w-0">
-              <span className="text-[16px] font-bold tracking-tight text-neutral-900 dark:text-white pl-1">
-                Spend
-              </span>
-              <span
-                title={
-                  syncState === 'synced'
-                    ? 'Synced to Firebase Cloud Firestore'
-                    : syncState === 'syncing'
-                      ? 'Syncing with Cloud Firestore...'
-                      : 'Saved locally'
-                }
-                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-black/[0.04] dark:bg-white/[0.07] text-neutral-500 dark:text-neutral-400"
-              >
-                {syncState === 'synced' ? (
-                  <>
-                    <CheckCircle2 className="w-3 h-3 text-[#34C759] dark:text-[#30D158]" />
-                    <span>Cloud</span>
-                  </>
-                ) : syncState === 'syncing' ? (
-                  <>
-                    <RefreshCw className="w-3 h-3 text-[#007AFF] animate-spin" />
-                    <span>Syncing</span>
-                  </>
-                ) : (
-                  <>
-                    <HardDrive className="w-3 h-3 text-neutral-400" />
-                    <span>Local</span>
-                  </>
-                )}
+            {/* App Title */}
+            <div className="flex items-center min-w-0">
+              <span className="text-[16px] font-bold tracking-tight text-neutral-900 dark:text-white pl-1.5">
+                Expense Tracker
               </span>
             </div>
 
-            {/* Right Controls: Cadence Settings & Account Management */}
-            <div className="flex items-center gap-1.5">
-              <button
-                type="button"
-                onClick={() => setIsSettingsOpen(true)}
-                aria-label="Open budget and cadence settings"
-                className="pressable touch-target h-9 px-3 rounded-full bg-black/[0.04] dark:bg-white/[0.07] hover:bg-black/[0.07] dark:hover:bg-white/[0.11] text-[12px] font-semibold text-neutral-700 dark:text-neutral-200 inline-flex items-center gap-1.5"
-              >
-                <SlidersHorizontal className="w-3.5 h-3.5 text-[#007AFF] dark:text-[#0A84FF]" />
-                <span>{periodWindow.cadenceLabel}</span>
-              </button>
-
+            {/* Right Control: Account Management */}
+            <div className="flex items-center">
               <button
                 type="button"
                 onClick={() => setIsAccountOpen(true)}

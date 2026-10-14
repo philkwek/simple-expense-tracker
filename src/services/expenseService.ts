@@ -263,6 +263,7 @@ export function subscribeToPeriodExpenses(
           amount: typeof data.amount === 'number' ? data.amount : 0,
           timestamp: normalizeTimestamp(data.timestamp),
           createdAt: normalizeTimestamp(data.createdAt),
+          hasTime: typeof data.hasTime === 'boolean' ? data.hasTime : true,
         });
       });
       onExpenses(items);
@@ -282,7 +283,12 @@ export function subscribeToPeriodExpenses(
  */
 export async function addExpense(
   userId: string,
-  input: { title: string; amount: number; timestamp?: number },
+  input: {
+    title: string;
+    amount: number;
+    timestamp?: number;
+    hasTime?: boolean;
+  },
 ): Promise<ExpenseItem> {
   const now = Date.now();
   const cleanTitle = input.title.trim().slice(0, 120) || 'Expense';
@@ -291,6 +297,7 @@ export async function addExpense(
     typeof input.timestamp === 'number' && Number.isFinite(input.timestamp)
       ? input.timestamp
       : now;
+  const hasTime = typeof input.hasTime === 'boolean' ? input.hasTime : true;
 
   if (!isFirebaseConfigured || !db || userId === 'local-guest') {
     const newItem: ExpenseItem = {
@@ -299,6 +306,7 @@ export async function addExpense(
       amount: cleanAmount,
       timestamp,
       createdAt: now,
+      hasTime,
     };
     const existing = readLocalExpenses(userId);
     writeLocalExpenses(userId, [newItem, ...existing]);
@@ -310,6 +318,7 @@ export async function addExpense(
     amount: cleanAmount,
     timestamp,
     createdAt: now,
+    hasTime,
   };
 
   const docRef = await addDoc(
@@ -328,11 +337,18 @@ export async function addExpense(
 export async function updateExpense(
   userId: string,
   expenseId: string,
-  updates: { title: string; amount: number; timestamp: number },
+  updates: {
+    title: string;
+    amount: number;
+    timestamp: number;
+    hasTime?: boolean;
+  },
 ): Promise<void> {
   const cleanTitle = updates.title.trim().slice(0, 120) || 'Expense';
   const cleanAmount = Math.max(0, Math.round(updates.amount * 100) / 100);
   const cleanTimestamp = Math.floor(updates.timestamp);
+  const cleanHasTime =
+    typeof updates.hasTime === 'boolean' ? updates.hasTime : true;
 
   if (!isFirebaseConfigured || !db || userId === 'local-guest') {
     const existing = readLocalExpenses(userId);
@@ -343,6 +359,7 @@ export async function updateExpense(
             title: cleanTitle,
             amount: cleanAmount,
             timestamp: cleanTimestamp,
+            hasTime: cleanHasTime,
           }
         : item,
     );
@@ -355,6 +372,7 @@ export async function updateExpense(
     title: cleanTitle,
     amount: cleanAmount,
     timestamp: cleanTimestamp,
+    hasTime: cleanHasTime,
   });
 }
 
@@ -397,5 +415,6 @@ export async function restoreExpense(
     amount: Math.max(0, Math.round(item.amount * 100) / 100),
     timestamp: Math.floor(item.timestamp),
     createdAt: Math.floor(item.createdAt),
+    hasTime: typeof item.hasTime === 'boolean' ? item.hasTime : true,
   });
 }
