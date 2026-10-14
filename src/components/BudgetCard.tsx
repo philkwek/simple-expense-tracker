@@ -71,7 +71,7 @@ export const BudgetCard: React.FC<BudgetCardProps> = ({
     >
       {/* Top Bar: Active Cycle Navigation & Countdown Pill */}
       <div className="flex items-center justify-between gap-2 mb-4">
-        <div className="inline-flex items-center bg-black/[0.04] dark:bg-white/[0.06] rounded-full p-0.5">
+        <div className="inline-flex items-center bg-white/90 dark:bg-neutral-900/80 border border-black/[0.055] dark:border-white/[0.08] shadow-[0_1px_2px_rgba(0,0,0,0.03)] rounded-full p-0.5">
           <button
             type="button"
             onClick={onPrevPeriod}
@@ -183,7 +183,7 @@ export const BudgetCard: React.FC<BudgetCardProps> = ({
 
         {/* Secondary Metrics Row: Spent vs Total Budget */}
         <div className="grid grid-cols-2 gap-3 pt-2">
-          <div className="rounded-2xl bg-black/[0.025] dark:bg-white/[0.04] px-3.5 py-2.5 border border-black/[0.04] dark:border-white/[0.05]">
+          <div className="rounded-2xl bg-white/90 dark:bg-neutral-900/80 px-3.5 py-2.5 border border-black/[0.055] dark:border-white/[0.08] shadow-[0_1px_2px_rgba(0,0,0,0.03)]">
             <div className="text-[11px] font-medium uppercase tracking-[0.05em] text-neutral-400 dark:text-neutral-500">
               Total Spent
             </div>
@@ -192,7 +192,7 @@ export const BudgetCard: React.FC<BudgetCardProps> = ({
             </div>
           </div>
 
-          <div className="rounded-2xl bg-black/[0.025] dark:bg-white/[0.04] px-3.5 py-2.5 border border-black/[0.04] dark:border-white/[0.05]">
+          <div className="rounded-2xl bg-white/90 dark:bg-neutral-900/80 px-3.5 py-2.5 border border-black/[0.055] dark:border-white/[0.08] shadow-[0_1px_2px_rgba(0,0,0,0.03)]">
             <div className="text-[11px] font-medium uppercase tracking-[0.05em] text-neutral-400 dark:text-neutral-500">
               Total Budget
             </div>

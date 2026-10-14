@@ -176,7 +176,7 @@ export function App() {
               aria-label="Open account and cloud sync settings"
               className={`pressable touch-target h-9 px-3 rounded-full text-[12px] font-semibold inline-flex items-center gap-1.5 transition-colors ${
                 user.isAnonymous
-                  ? 'bg-black/[0.04] dark:bg-white/[0.07] text-neutral-700 dark:text-neutral-200'
+                  ? 'bg-white/90 dark:bg-neutral-900/80 border border-black/[0.055] dark:border-white/[0.08] shadow-[0_1px_2px_rgba(0,0,0,0.03)] text-neutral-700 dark:text-neutral-200'
                   : 'bg-[#007AFF]/12 dark:bg-[#0A84FF]/20 text-[#007AFF] dark:text-[#0A84FF]'
               }`}
             >

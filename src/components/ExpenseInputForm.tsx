@@ -157,7 +157,7 @@ export const ExpenseInputForm: React.FC<ExpenseInputFormProps> = ({
               setTitle(e.target.value);
               if (errorMsg) setErrorMsg(null);
             }}
-            className="w-full h-11 px-3.5 rounded-xl bg-black/[0.04] dark:bg-white/[0.06] text-[16px] text-neutral-900 dark:text-white placeholder:text-neutral-400 dark:placeholder:text-neutral-500 focus:outline-none focus:ring-2 focus:ring-[#007AFF]/40 transition-shadow"
+            className="w-full h-11 px-3.5 rounded-xl bg-white/90 dark:bg-neutral-900/80 border border-black/[0.055] dark:border-white/[0.08] shadow-[0_1px_2px_rgba(0,0,0,0.03)] text-[16px] text-neutral-900 dark:text-white placeholder:text-neutral-400 dark:placeholder:text-neutral-500 focus:outline-none focus:ring-2 focus:ring-[#007AFF]/40 transition-shadow"
           />
         </div>
 
@@ -179,7 +179,7 @@ export const ExpenseInputForm: React.FC<ExpenseInputFormProps> = ({
             placeholder="0.00"
             value={amountStr}
             onChange={handleAmountChange}
-            className="w-full h-11 pl-7 pr-3 rounded-xl bg-black/[0.04] dark:bg-white/[0.06] text-[16px] font-semibold tabular-nums text-right text-neutral-900 dark:text-white placeholder:text-neutral-400 dark:placeholder:text-neutral-500 focus:outline-none focus:ring-2 focus:ring-[#007AFF]/40 transition-shadow"
+            className="w-full h-11 pl-7 pr-3 rounded-xl bg-white/90 dark:bg-neutral-900/80 border border-black/[0.055] dark:border-white/[0.08] shadow-[0_1px_2px_rgba(0,0,0,0.03)] text-[16px] font-semibold tabular-nums text-right text-neutral-900 dark:text-white placeholder:text-neutral-400 dark:placeholder:text-neutral-500 focus:outline-none focus:ring-2 focus:ring-[#007AFF]/40 transition-shadow"
           />
         </div>
 
@@ -248,7 +248,7 @@ export const ExpenseInputForm: React.FC<ExpenseInputFormProps> = ({
                     className={`pressable px-2.5 py-1 rounded-lg text-[12px] font-medium ${
                       customDate === toDateInputValue(Date.now()) && !customTime
                         ? 'bg-[#007AFF]/15 text-[#007AFF] dark:bg-[#0A84FF]/25 dark:text-[#0A84FF]'
-                        : 'bg-black/[0.04] dark:bg-white/[0.07] text-neutral-700 dark:text-neutral-200'
+                        : 'bg-white/90 dark:bg-neutral-900/80 border border-black/[0.055] dark:border-white/[0.08] text-neutral-700 dark:text-neutral-200'
                     }`}
                   >
                     Today (All day)
@@ -256,14 +256,14 @@ export const ExpenseInputForm: React.FC<ExpenseInputFormProps> = ({
                   <button
                     type="button"
                     onClick={() => applyQuickPreset('yesterday')}
-                    className="pressable px-2.5 py-1 rounded-lg text-[12px] font-medium bg-black/[0.04] dark:bg-white/[0.07] text-neutral-700 dark:text-neutral-200"
+                    className="pressable px-2.5 py-1 rounded-lg text-[12px] font-medium bg-white/90 dark:bg-neutral-900/80 border border-black/[0.055] dark:border-white/[0.08] text-neutral-700 dark:text-neutral-200"
                   >
                     Yesterday (All day)
                   </button>
                   <button
                     type="button"
                     onClick={() => applyQuickPreset('now')}
-                    className="pressable px-2.5 py-1 rounded-lg text-[12px] font-medium bg-black/[0.04] dark:bg-white/[0.07] text-neutral-700 dark:text-neutral-200"
+                    className="pressable px-2.5 py-1 rounded-lg text-[12px] font-medium bg-white/90 dark:bg-neutral-900/80 border border-black/[0.055] dark:border-white/[0.08] text-neutral-700 dark:text-neutral-200"
                   >
                     Specific time
                   </button>
@@ -288,7 +288,7 @@ export const ExpenseInputForm: React.FC<ExpenseInputFormProps> = ({
                     aria-label="Expense date"
                     value={customDate}
                     onChange={(e) => setCustomDate(e.target.value)}
-                    className="w-full h-10 pl-9 pr-2.5 rounded-xl bg-black/[0.04] dark:bg-white/[0.06] text-[14px] tabular-nums text-neutral-800 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-[#007AFF]/40"
+                    className="w-full h-10 pl-9 pr-2.5 rounded-xl bg-white/90 dark:bg-neutral-900/80 border border-black/[0.055] dark:border-white/[0.08] shadow-[0_1px_2px_rgba(0,0,0,0.03)] text-[14px] tabular-nums text-neutral-800 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-[#007AFF]/40"
                   />
                 </div>
 
@@ -300,7 +300,7 @@ export const ExpenseInputForm: React.FC<ExpenseInputFormProps> = ({
                     aria-label="Optional expense time"
                     value={customTime}
                     onChange={(e) => setCustomTime(e.target.value)}
-                    className="w-full h-10 pl-9 pr-7 rounded-xl bg-black/[0.04] dark:bg-white/[0.06] text-[14px] tabular-nums text-neutral-800 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-[#007AFF]/40"
+                    className="w-full h-10 pl-9 pr-7 rounded-xl bg-white/90 dark:bg-neutral-900/80 border border-black/[0.055] dark:border-white/[0.08] shadow-[0_1px_2px_rgba(0,0,0,0.03)] text-[14px] tabular-nums text-neutral-800 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-[#007AFF]/40"
                   />
                   {customTime && (
                     <button
