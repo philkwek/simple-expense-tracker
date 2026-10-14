@@ -111,23 +111,25 @@
     transform: scale(0.97);
   }
 
-  /* Mobile Safe Area Helpers */
-  .safe-top {
-    padding-top: max(0.75rem, env(safe-area-inset-top));
-  }
-
-  .safe-bottom {
-    padding-bottom: max(1.5rem, env(safe-area-inset-bottom));
-  }
-
-  .safe-sheet-bottom {
-    padding-bottom: max(1.75rem, calc(env(safe-area-inset-bottom) + 0.75rem));
-  }
-
   /* §10 Minimum 44x44pt Apple HIG touch target */
   .touch-target {
     min-width: 44px;
     min-height: 44px;
+  }
+}
+
+@layer utilities {
+  /* Mobile Safe Area Helpers (placed in utilities layer so pt-* / pb-* do not accidentally override them) */
+  .safe-top {
+    padding-top: calc(env(safe-area-inset-top, 0px) + 0.75rem);
+  }
+
+  .safe-bottom {
+    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 2.5rem);
+  }
+
+  .safe-sheet-bottom {
+    padding-bottom: max(1.75rem, calc(env(safe-area-inset-bottom, 0px) + 0.75rem));
   }
 }
 

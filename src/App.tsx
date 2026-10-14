@@ -160,7 +160,7 @@ export function App() {
   return (
     <div className="min-h-dvh w-full bg-[#F5F5F7] dark:bg-black text-neutral-900 dark:text-neutral-100 selection:bg-[#007AFF]/20">
       {/* Mobile-First Centered Column Shell */}
-      <div className="w-full max-w-md mx-auto min-h-dvh flex flex-col px-4 pt-3 pb-10 safe-top safe-bottom">
+      <div className="w-full max-w-md mx-auto min-h-dvh flex flex-col px-4 safe-top safe-bottom">
         {/* App Header Row */}
         <header className="w-full flex items-center justify-between gap-2 py-1 mb-4">
           <div className="flex items-center min-w-0">
