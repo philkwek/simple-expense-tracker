@@ -204,10 +204,10 @@ const ExpenseRow: React.FC<ExpenseRowProps> = ({
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, scale: 0.96, transition: { duration: 0.2 } }}
       transition={SPRING_CRITICALLY_DAMPED}
-      className="relative overflow-hidden rounded-2xl bg-white/80 dark:bg-neutral-900/80 border border-black/[0.05] dark:border-white/[0.07]"
+      className="relative w-full overflow-hidden rounded-2xl bg-white/80 dark:bg-neutral-900/80 border border-black/[0.05] dark:border-white/[0.07]"
     >
       {isEditMode ? (
-        <div className="p-3.5 space-y-2.5">
+        <div className="px-4 py-3.5 space-y-2.5">
           <div className="flex items-center gap-2">
             <input
               type="text"
@@ -468,7 +468,7 @@ export const ExpenseList: React.FC<ExpenseListProps> = ({
         initial={{ opacity: 0, y: 6 }}
         animate={{ opacity: 1, y: 0 }}
         transition={SPRING_CRITICALLY_DAMPED}
-        className="material-glass rounded-[22px] py-12 px-6 text-center"
+        className="material-glass w-full rounded-2xl py-12 px-6 text-center"
       >
         <div className="w-11 h-11 rounded-2xl bg-black/[0.04] dark:bg-white/[0.06] flex items-center justify-center mx-auto mb-3 text-neutral-400 dark:text-neutral-500">
           <Receipt className="w-5 h-5" />
@@ -484,9 +484,9 @@ export const ExpenseList: React.FC<ExpenseListProps> = ({
   }
 
   return (
-    <div className="space-y-4" aria-label="Itemized expenses">
+    <div className="w-full space-y-4" aria-label="Itemized expenses">
       {/* Top List Toolbar with Edit Mode Toggle */}
-      <div className="flex items-center justify-between px-1.5">
+      <div className="flex items-center justify-between px-1">
         <span className="text-[13px] font-semibold tracking-tight text-neutral-700 dark:text-neutral-200">
           {isEditMode ? 'Editing Expenses' : 'Expenses'}
         </span>
