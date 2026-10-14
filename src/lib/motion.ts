@@ -1,4 +1,4 @@
-import { Transition } from 'framer-motion';
+import { Transition, ValueAnimationTransition } from 'framer-motion';
 
 /**
  * Apple WWDC "Designing Fluid Interfaces" Spring & Gesture Physics
@@ -9,25 +9,25 @@ import { Transition } from 'framer-motion';
  *   carries momentum into the spring.
  */
 
-export const SPRING_CRITICALLY_DAMPED: Transition = {
+export const SPRING_CRITICALLY_DAMPED: ValueAnimationTransition<number> = {
   type: 'spring',
   bounce: 0,
   duration: 0.38,
 };
 
-export const SPRING_MOMENTUM: Transition = {
+export const SPRING_MOMENTUM: ValueAnimationTransition<number> = {
   type: 'spring',
   bounce: 0.18,
   duration: 0.32,
 };
 
-export const SPRING_SNAPPY: Transition = {
+export const SPRING_SNAPPY: ValueAnimationTransition<number> = {
   type: 'spring',
   bounce: 0,
   duration: 0.26,
 };
 
-export const REDUCED_MOTION_TRANSITION: Transition = {
+export const REDUCED_MOTION_TRANSITION: ValueAnimationTransition<number> = {
   type: 'tween',
   ease: 'easeOut',
   duration: 0.18,
