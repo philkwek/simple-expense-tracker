@@ -1,8 +1,8 @@
 import {
   DayExpenseGroup,
   ExpenseItem,
+  PeriodConfig,
   PeriodWindow,
-  UserSettings,
 } from '../types/expense';
 
 const WEEKDAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -103,7 +103,7 @@ function formatCountdown(now: Date, end: Date, offset: number): string {
  * - offset < 0: past cycles (-1 = immediately preceding cycle, etc.)
  */
 export function calculatePeriodWindow(
-  settings: UserSettings,
+  settings: PeriodConfig,
   now: Date = new Date(),
   cycleOffset = 0,
 ): PeriodWindow {

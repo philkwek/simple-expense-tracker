@@ -156,6 +156,7 @@ describe('Budget Period Calculator (periodCalculator.ts)', () => {
       const expenses = [
         {
           id: '1',
+          budgetId: 'default',
           title: 'Coffee',
           amount: 5.5,
           timestamp: new Date(2026, 9, 14, 9, 0, 0).getTime(),
@@ -163,6 +164,7 @@ describe('Budget Period Calculator (periodCalculator.ts)', () => {
         },
         {
           id: '2',
+          budgetId: 'default',
           title: 'Lunch',
           amount: 14.25,
           timestamp: new Date(2026, 9, 14, 12, 30, 0).getTime(),
@@ -170,6 +172,7 @@ describe('Budget Period Calculator (periodCalculator.ts)', () => {
         },
         {
           id: '3',
+          budgetId: 'default',
           title: 'Groceries',
           amount: 42.1,
           timestamp: new Date(2026, 9, 13, 18, 0, 0).getTime(),

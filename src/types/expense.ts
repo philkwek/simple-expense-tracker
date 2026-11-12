@@ -2,6 +2,10 @@ export type BudgetCadence = 'daily' | 'weekly' | 'monthly';
 
 export type SyncState = 'synced' | 'syncing' | 'local' | 'error';
 
+/**
+ * Legacy single-budget settings shape, still stored at `users/{uid}/settings/preference`.
+ * Only read during migration to the multi-budget model; new code uses `Budget`.
+ */
 export interface UserSettings {
   budget: number;
   cadence: BudgetCadence;
@@ -15,8 +19,35 @@ export interface UserSettings {
   updatedAt?: number;
 }
 
+/** The fields that decide how a budget's period window is calculated. */
+export type PeriodConfig = Pick<UserSettings, 'cadence' | 'periodStartDay'>;
+
+/** Editable fields of a budget, as entered in the budget editor. */
+export interface BudgetInput {
+  name: string;
+  /** Spending allowance per period */
+  amount: number;
+  cadence: BudgetCadence;
+  /** Same meaning as `UserSettings.periodStartDay` */
+  periodStartDay: number;
+  currency: string;
+}
+
+export interface Budget extends BudgetInput {
+  id: string;
+  sortOrder: number;
+  createdAt: number;
+  updatedAt?: number;
+}
+
+/** ID given to the budget created from a user's pre-multi-budget settings. */
+export const DEFAULT_BUDGET_ID = 'default';
+export const BUDGET_NAME_MAX_LENGTH = 40;
+
 export interface ExpenseItem {
   id: string;
+  /** The budget this expense counts against */
+  budgetId: string;
   title: string;
   amount: number;
   /** Epoch milliseconds of when the expense occurred */
@@ -61,6 +92,23 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
   periodStartDay: 1,
   currency: 'USD',
 };
+
+export function legacySettingsToBudget(
+  settings: UserSettings,
+  now: number = Date.now(),
+): Budget {
+  return {
+    id: DEFAULT_BUDGET_ID,
+    name: 'Main',
+    amount: settings.budget,
+    cadence: settings.cadence,
+    periodStartDay: settings.periodStartDay,
+    currency: settings.currency,
+    sortOrder: 0,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
 
 export interface CurrencyOption {
   code: string;
