@@ -35,6 +35,8 @@ export interface ExpenseDraft {
 interface ExpenseListProps {
   expenses: ExpenseItem[];
   currency: string;
+  /** Rolling daily allowance keyed by `YYYY-MM-DD` local date (weekly/monthly daily tracking). */
+  dailyAllowances?: Map<string, number> | null;
   onBatchUpdateExpenses: (
     updates: ExpenseUpdateEntry[],
   ) => Promise<void> | void;
@@ -354,6 +356,7 @@ const ExpenseRow: React.FC<ExpenseRowProps> = ({
 export const ExpenseList: React.FC<ExpenseListProps> = ({
   expenses,
   currency,
+  dailyAllowances,
   onBatchUpdateExpenses,
   onDeleteExpense,
 }) => {
@@ -530,47 +533,81 @@ export const ExpenseList: React.FC<ExpenseListProps> = ({
       </div>
 
       <AnimatePresence initial={false}>
-        {dayGroups.map((group) => (
-          <motion.section
-            key={group.dateKey}
-            layout
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={SPRING_CRITICALLY_DAMPED}
-            className="space-y-2"
-          >
-            {/* Day Group Header with Tabular Daily Subtotal */}
-            <div className="flex items-center justify-between px-1.5">
-              <h3 className="text-[12px] font-semibold uppercase tracking-[0.06em] text-neutral-400 dark:text-neutral-500">
-                {group.label}
-              </h3>
-              <span className="text-[12px] font-semibold tabular-nums text-neutral-500 dark:text-neutral-400">
-                {formatCurrency(group.subtotal, currency)}
-              </span>
-            </div>
+        {dayGroups.map((group) => {
+          const allowance = dailyAllowances?.get(group.dateKey);
+          const subtotalLabel = formatCurrency(group.subtotal, currency);
+          const allowanceLabel =
+            typeof allowance === 'number'
+              ? formatCurrency(allowance, currency)
+              : null;
+          const isOverAllowance =
+            typeof allowance === 'number' &&
+            group.subtotal > allowance + 0.004;
 
-            <ul className="space-y-2">
-              <AnimatePresence initial={false}>
-                {group.items.map((item) => (
-                  <ExpenseRow
-                    key={item.id}
-                    item={item}
-                    currency={currency}
-                    isEditMode={isEditMode}
-                    draft={
-                      drafts[item.id] ?? createDraftFromItem(item, currency)
-                    }
-                    onDraftChange={handleDraftChange}
-                    isOpenRow={openRowId === item.id}
-                    onOpenChange={setOpenRowId}
-                    onDelete={onDeleteExpense}
-                  />
-                ))}
-              </AnimatePresence>
-            </ul>
-          </motion.section>
-        ))}
+          return (
+            <motion.section
+              key={group.dateKey}
+              layout
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={SPRING_CRITICALLY_DAMPED}
+              className="space-y-2"
+            >
+              {/* Day Group Header with Tabular Daily Subtotal */}
+              <div className="flex items-center justify-between px-1.5">
+                <h3 className="text-[12px] font-semibold uppercase tracking-[0.06em] text-neutral-400 dark:text-neutral-500">
+                  {group.label}
+                </h3>
+                <span
+                  aria-label={
+                    allowanceLabel
+                      ? `Spent ${subtotalLabel} of ${allowanceLabel} daily allowance`
+                      : undefined
+                  }
+                  title={
+                    allowanceLabel
+                      ? `Spent ${subtotalLabel} of ${allowanceLabel} daily allowance`
+                      : undefined
+                  }
+                  className={`text-[12px] font-semibold tabular-nums ${
+                    isOverAllowance
+                      ? 'text-[#FF3B30] dark:text-[#FF453A]'
+                      : 'text-neutral-500 dark:text-neutral-400'
+                  }`}
+                >
+                  {subtotalLabel}
+                  {allowanceLabel && (
+                    <span className="font-medium text-neutral-400 dark:text-neutral-500">
+                      {' / '}
+                      {allowanceLabel}
+                    </span>
+                  )}
+                </span>
+              </div>
+
+              <ul className="space-y-2">
+                <AnimatePresence initial={false}>
+                  {group.items.map((item) => (
+                    <ExpenseRow
+                      key={item.id}
+                      item={item}
+                      currency={currency}
+                      isEditMode={isEditMode}
+                      draft={
+                        drafts[item.id] ?? createDraftFromItem(item, currency)
+                      }
+                      onDraftChange={handleDraftChange}
+                      isOpenRow={openRowId === item.id}
+                      onOpenChange={setOpenRowId}
+                      onDelete={onDeleteExpense}
+                    />
+                  ))}
+                </AnimatePresence>
+              </ul>
+            </motion.section>
+          );
+        })}
       </AnimatePresence>
     </div>
   );

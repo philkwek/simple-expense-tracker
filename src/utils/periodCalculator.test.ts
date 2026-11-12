@@ -1,15 +1,30 @@
 import { describe, expect, it } from 'vitest';
 import {
   calculatePeriodWindow,
+  computeDailyAllowances,
   formatCurrency,
   fromDateAndTimeInputs,
   fromDateTimeLocalValue,
+  getCycleDayCount,
+  getDailyAllowanceSummary,
   groupExpensesByDay,
   toDateInputValue,
   toDateTimeLocalValue,
+  toLocalDateKey,
   toTimeInputValue,
 } from './periodCalculator';
-import { UserSettings } from '../types/expense';
+import { ExpenseItem, UserSettings } from '../types/expense';
+
+function makeExpense(amount: number, date: Date): ExpenseItem {
+  return {
+    id: `${date.getTime()}-${amount}`,
+    budgetId: 'default',
+    title: 'Sample',
+    amount,
+    timestamp: date.getTime(),
+    createdAt: 1,
+  };
+}
 
 describe('Budget Period Calculator (periodCalculator.ts)', () => {
   describe('Daily cadence', () => {
@@ -156,6 +171,7 @@ describe('Budget Period Calculator (periodCalculator.ts)', () => {
       const expenses = [
         {
           id: '1',
+          budgetId: 'default',
           title: 'Coffee',
           amount: 5.5,
           timestamp: new Date(2026, 9, 14, 9, 0, 0).getTime(),
@@ -163,6 +179,7 @@ describe('Budget Period Calculator (periodCalculator.ts)', () => {
         },
         {
           id: '2',
+          budgetId: 'default',
           title: 'Lunch',
           amount: 14.25,
           timestamp: new Date(2026, 9, 14, 12, 30, 0).getTime(),
@@ -170,6 +187,7 @@ describe('Budget Period Calculator (periodCalculator.ts)', () => {
         },
         {
           id: '3',
+          budgetId: 'default',
           title: 'Groceries',
           amount: 42.1,
           timestamp: new Date(2026, 9, 13, 18, 0, 0).getTime(),
@@ -201,6 +219,231 @@ describe('Budget Period Calculator (periodCalculator.ts)', () => {
       const withTimeMs = fromDateAndTimeInputs('2026-10-14', '18:30');
       expect(withTimeMs).toBe(new Date(2026, 9, 14, 18, 30, 0, 0).getTime());
       expect(toTimeInputValue(withTimeMs)).toBe('18:30');
+    });
+  });
+
+  describe('Rolling daily allowance', () => {
+    const weeklySettings: UserSettings = {
+      budget: 70,
+      cadence: 'weekly',
+      periodStartDay: 1, // Monday
+      currency: 'USD',
+    };
+    const monthlySettings: UserSettings = {
+      budget: 280,
+      cadence: 'monthly',
+      periodStartDay: 1,
+      currency: 'USD',
+    };
+
+    describe('getCycleDayCount', () => {
+      it('counts 7 calendar days for a weekly window', () => {
+        const window = calculatePeriodWindow(
+          weeklySettings,
+          new Date(2026, 9, 14, 10, 0, 0),
+          0,
+        );
+        expect(window.start).toEqual(new Date(2026, 9, 12, 0, 0, 0, 0)); // Mon Oct 12
+        expect(getCycleDayCount(window)).toBe(7);
+      });
+
+      it('counts 28 or 29 days for February in non-leap and leap years', () => {
+        const nonLeap = calculatePeriodWindow(
+          monthlySettings,
+          new Date(2026, 1, 10, 12, 0, 0),
+          0,
+        );
+        expect(nonLeap.start).toEqual(new Date(2026, 1, 1, 0, 0, 0, 0));
+        expect(nonLeap.end).toEqual(new Date(2026, 2, 1, 0, 0, 0, 0));
+        expect(getCycleDayCount(nonLeap)).toBe(28);
+
+        const leap = calculatePeriodWindow(
+          monthlySettings,
+          new Date(2028, 1, 10, 12, 0, 0),
+          0,
+        );
+        expect(leap.start).toEqual(new Date(2028, 1, 1, 0, 0, 0, 0));
+        expect(leap.end).toEqual(new Date(2028, 2, 1, 0, 0, 0, 0));
+        expect(getCycleDayCount(leap)).toBe(29);
+      });
+
+      it('counts the clamped day span when periodStartDay = 31 lands in a 30-day month', () => {
+        const clampedSettings: UserSettings = {
+          ...monthlySettings,
+          periodStartDay: 31,
+        };
+        // Apr 10, 2026 is before Apr 31 (clamped to Apr 30), so the active
+        // cycle is Mar 31 -> Apr 30: 30 calendar days.
+        const window = calculatePeriodWindow(
+          clampedSettings,
+          new Date(2026, 3, 10, 12, 0, 0),
+          0,
+        );
+        expect(window.start).toEqual(new Date(2026, 2, 31, 0, 0, 0, 0)); // Mar 31
+        expect(window.end).toEqual(new Date(2026, 3, 30, 0, 0, 0, 0)); // Apr 30
+        expect(getCycleDayCount(window)).toBe(30);
+      });
+
+      it('counts 7 calendar days for a weekly window spanning a DST transition', () => {
+        // US DST starts Sun Mar 8, 2026 and ends Sun Nov 1, 2026.
+        const springForward = calculatePeriodWindow(
+          weeklySettings,
+          new Date(2026, 2, 4, 12, 0, 0), // Wed Mar 4
+          0,
+        );
+        expect(springForward.start).toEqual(new Date(2026, 2, 2, 0, 0, 0, 0)); // Mon Mar 2
+        expect(springForward.end).toEqual(new Date(2026, 2, 9, 0, 0, 0, 0)); // Mon Mar 9
+        expect(getCycleDayCount(springForward)).toBe(7);
+
+        const fallBack = calculatePeriodWindow(
+          { ...weeklySettings, periodStartDay: 0 }, // Sunday
+          new Date(2026, 10, 4, 12, 0, 0), // Wed Nov 4
+          0,
+        );
+        expect(fallBack.start).toEqual(new Date(2026, 10, 1, 0, 0, 0, 0)); // Sun Nov 1
+        expect(fallBack.end).toEqual(new Date(2026, 10, 8, 0, 0, 0, 0)); // Sun Nov 8
+        expect(getCycleDayCount(fallBack)).toBe(7);
+      });
+    });
+
+    describe('computeDailyAllowances', () => {
+      const window = calculatePeriodWindow(
+        weeklySettings,
+        new Date(2026, 9, 14, 10, 0, 0),
+        0,
+      ); // Mon Oct 12 -> Mon Oct 19, amount 70
+
+      it('rolls the untouched amount forward across the cycle when there are no expenses', () => {
+        const allowances = computeDailyAllowances(70, window, []);
+
+        expect(allowances.size).toBe(7);
+        expect(Array.from(allowances.keys())).toEqual([
+          '2026-10-12',
+          '2026-10-13',
+          '2026-10-14',
+          '2026-10-15',
+          '2026-10-16',
+          '2026-10-17',
+          '2026-10-18',
+        ]);
+        // Day 1 is the even split (70 / 7); each later day divides the untouched
+        // amount by the shrinking number of days left, including that day.
+        expect(Array.from(allowances.values())).toEqual([
+          10, 11.67, 14, 17.5, 23.33, 35, 70,
+        ]);
+      });
+
+      it('does not let same-day spending change that day, only later days', () => {
+        const expenses = [
+          makeExpense(35, new Date(2026, 9, 12, 9, 0, 0)), // day 1
+          makeExpense(20, new Date(2026, 9, 14, 9, 0, 0)), // day 3
+        ];
+        const allowances = computeDailyAllowances(70, window, expenses);
+
+        expect(allowances.get('2026-10-12')).toBe(10); // unchanged by its own 35
+        // 35 spent before day 2, 6 days left: (70 - 35) / 6 = 5.833...
+        expect(allowances.get('2026-10-13')).toBe(5.83);
+        // 55 spent before day 4, 4 days left: (70 - 55) / 4 = 3.75
+        expect(allowances.get('2026-10-15')).toBe(3.75);
+      });
+
+      it('rounds allowances to cents', () => {
+        const allowances = computeDailyAllowances(100, window, []);
+        // 100 / 7 = 14.2857... -> 14.29 on day 1, 100 / 1 = 100 on day 7.
+        expect(allowances.get('2026-10-12')).toBe(14.29);
+        expect(allowances.get('2026-10-13')).toBe(16.67); // 100 / 6
+        expect(allowances.get('2026-10-18')).toBe(100);
+      });
+
+      it('returns 0 once spending before a day reaches the amount', () => {
+        const expenses = [makeExpense(70, new Date(2026, 9, 12, 9, 0, 0))];
+        const allowances = computeDailyAllowances(70, window, expenses);
+
+        expect(allowances.get('2026-10-12')).toBe(10);
+        expect(allowances.get('2026-10-13')).toBe(0);
+        expect(allowances.get('2026-10-18')).toBe(0);
+      });
+
+      it('ignores expenses outside the window and treats bad amounts as 0', () => {
+        const outside = [
+          makeExpense(100, new Date(2026, 9, 11, 23, 59, 0)), // before start
+          makeExpense(100, new Date(2026, 9, 19, 0, 0, 0)), // exactly at end (exclusive)
+        ];
+        const allowances = computeDailyAllowances(70, window, outside);
+        const baseline = computeDailyAllowances(70, window, []);
+        expect(Array.from(allowances.entries())).toEqual(Array.from(baseline.entries()));
+
+        const negative = computeDailyAllowances(-70, window, []);
+        for (const value of negative.values()) {
+          expect(value).toBe(0);
+        }
+
+        const notANumber = computeDailyAllowances(Number.NaN, window, []);
+        for (const value of notANumber.values()) {
+          expect(value).toBe(0);
+        }
+      });
+
+      it('exports local date keys that match groupExpensesByDay', () => {
+        expect(toLocalDateKey(new Date(2026, 1, 1, 23, 30, 0))).toBe('2026-02-01');
+        const groups = groupExpensesByDay(
+          [makeExpense(5, new Date(2026, 1, 1, 9, 0, 0))],
+          new Date(2026, 1, 2, 9, 0, 0),
+        );
+        expect(groups[0].dateKey).toBe('2026-02-01');
+      });
+    });
+
+    describe('getDailyAllowanceSummary', () => {
+      const window = calculatePeriodWindow(
+        monthlySettings,
+        new Date(2026, 1, 10, 12, 0, 0),
+        0,
+      ); // Feb 1 -> Mar 1, 2026 (28 days)
+
+      const expenses = [
+        makeExpense(20, new Date(2026, 1, 1, 9, 0, 0)),
+        makeExpense(30, new Date(2026, 1, 10, 9, 0, 0)),
+        makeExpense(99, new Date(2026, 2, 1, 0, 0, 0)), // outside (end exclusive)
+      ];
+
+      it('returns null when now is outside the window', () => {
+        expect(
+          getDailyAllowanceSummary(280, window, expenses, new Date(2026, 0, 31, 23, 59, 0)),
+        ).toBeNull();
+        expect(
+          getDailyAllowanceSummary(280, window, expenses, new Date(2026, 2, 1, 0, 0, 0)),
+        ).toBeNull();
+      });
+
+      it('reports the allowance, today spending and cycle remainder', () => {
+        const now = new Date(2026, 1, 10, 12, 0, 0); // Feb 10 -> day index 9, 19 days left
+        const summary = getDailyAllowanceSummary(280, window, expenses, now);
+
+        expect(summary).not.toBeNull();
+        expect(summary!.allowance).toBe(13.68); // (280 - 20) / 19 = 13.684...
+        expect(summary!.spentToday).toBe(30);
+        expect(summary!.remainingToday).toBe(-16.32); // 13.68 - 30
+        expect(summary!.cycleRemaining).toBe(230); // 280 - 20 - 30
+
+        const allowances = computeDailyAllowances(280, window, expenses);
+        expect(summary!.allowance).toBe(allowances.get('2026-02-10'));
+      });
+
+      it('gives the full even split on the first day of the cycle', () => {
+        const summary = getDailyAllowanceSummary(
+          280,
+          window,
+          expenses,
+          new Date(2026, 1, 1, 0, 0, 0),
+        );
+
+        expect(summary).not.toBeNull();
+        expect(summary!.allowance).toBe(10); // 280 / 28 on day 1
+        expect(summary!.spentToday).toBe(20);
+        expect(summary!.remainingToday).toBe(-10);
+        expect(summary!.cycleRemaining).toBe(230); // 280 - 20 (Feb 1) - 30 (Feb 10)
+      });
     });
   });
 });

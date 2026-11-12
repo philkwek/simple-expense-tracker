@@ -18,6 +18,11 @@
     overscroll-behavior-y: none;
   }
 
+  /* Matches the App shell + theme-color so there's no flash before React mounts */
+  body {
+    @apply bg-[#F5F5F7] text-neutral-900 dark:bg-black dark:text-neutral-100 antialiased;
+  }
+
   /* Prevent iOS Safari auto-zoom on input focus by guaranteeing >= 16px on mobile */
   input,
   select,

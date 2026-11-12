@@ -30,3 +30,6 @@ ui-debug.log*
 *.njsproj
 *.sln
 *.sw?
+
+# Cloud Functions build output
+functions/lib

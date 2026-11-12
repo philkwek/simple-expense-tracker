@@ -60,6 +60,24 @@ export const ExpenseInputForm: React.FC<ExpenseInputFormProps> = ({
     });
   };
 
+  // Which quick preset (if any) matches the current date/time inputs, so it can be highlighted.
+  const activePreset = (() => {
+    if (customTime) return 'now';
+    const now = new Date();
+    if (customDate === toDateInputValue(now.getTime())) return 'today';
+    const y = new Date(now);
+    y.setDate(now.getDate() - 1);
+    if (customDate === toDateInputValue(y.getTime())) return 'yesterday';
+    return null;
+  })();
+
+  const presetClass = (isActive: boolean) =>
+    `pressable px-2.5 py-1 rounded-lg text-[12px] font-medium border ${
+      isActive
+        ? 'border-transparent bg-[#007AFF]/15 text-[#007AFF] dark:bg-[#0A84FF]/25 dark:text-[#0A84FF]'
+        : 'bg-white/90 dark:bg-neutral-900/80 border-black/[0.055] dark:border-white/[0.08] text-neutral-700 dark:text-neutral-200'
+    }`;
+
   const applyQuickPreset = (preset: 'today' | 'yesterday' | 'now') => {
     const now = new Date();
     if (preset === 'today') {
@@ -139,6 +157,11 @@ export const ExpenseInputForm: React.FC<ExpenseInputFormProps> = ({
       aria-label="Quick add expense"
       className="w-full"
     >
+      <div className="flex items-center gap-1.5 px-1 mb-1.5 text-[12px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+        <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+        <span>New expense</span>
+      </div>
+
       {/* Primary 2-Input Quick Entry Row */}
       <div className="flex items-center gap-2">
         <div className="flex-1 min-w-0">
@@ -215,7 +238,7 @@ export const ExpenseInputForm: React.FC<ExpenseInputFormProps> = ({
               ? customTime
                 ? 'Custom date & time'
                 : 'Custom date (Whole day)'
-              : 'Now (Auto-timestamp)'}
+              : 'Logged as now · change'}
           </span>
         </button>
 
@@ -245,25 +268,24 @@ export const ExpenseInputForm: React.FC<ExpenseInputFormProps> = ({
                   <button
                     type="button"
                     onClick={() => applyQuickPreset('today')}
-                    className={`pressable px-2.5 py-1 rounded-lg text-[12px] font-medium ${
-                      customDate === toDateInputValue(Date.now()) && !customTime
-                        ? 'bg-[#007AFF]/15 text-[#007AFF] dark:bg-[#0A84FF]/25 dark:text-[#0A84FF]'
-                        : 'bg-white/90 dark:bg-neutral-900/80 border border-black/[0.055] dark:border-white/[0.08] text-neutral-700 dark:text-neutral-200'
-                    }`}
+                    aria-pressed={activePreset === 'today'}
+                    className={presetClass(activePreset === 'today')}
                   >
                     Today (All day)
                   </button>
                   <button
                     type="button"
                     onClick={() => applyQuickPreset('yesterday')}
-                    className="pressable px-2.5 py-1 rounded-lg text-[12px] font-medium bg-white/90 dark:bg-neutral-900/80 border border-black/[0.055] dark:border-white/[0.08] text-neutral-700 dark:text-neutral-200"
+                    aria-pressed={activePreset === 'yesterday'}
+                    className={presetClass(activePreset === 'yesterday')}
                   >
                     Yesterday (All day)
                   </button>
                   <button
                     type="button"
                     onClick={() => applyQuickPreset('now')}
-                    className="pressable px-2.5 py-1 rounded-lg text-[12px] font-medium bg-white/90 dark:bg-neutral-900/80 border border-black/[0.055] dark:border-white/[0.08] text-neutral-700 dark:text-neutral-200"
+                    aria-pressed={activePreset === 'now'}
+                    className={presetClass(activePreset === 'now')}
                   >
                     Specific time
                   </button>

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Full-bleed master: used for apple-touch-icon and maskable PWA icons.
+       The receipt sits inside the 40% safe-zone circle (max radius ~182px). -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2E8FFF"/>
+      <stop offset="1" stop-color="#0066E0"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#bg)"/>
+  <path fill="#fff" d="M164 112h184a20 20 0 0 1 20 20v268l-32-22-32 22-32-22-32 22-32-22-32 22-32-22V132a20 20 0 0 1 20-20z"/>
+  <g fill="#007AFF">
+    <rect x="184" y="160" width="144" height="26" rx="13" opacity=".35"/>
+    <rect x="184" y="214" width="96" height="26" rx="13" opacity=".35"/>
+    <rect x="184" y="290" width="144" height="36" rx="18"/>
+  </g>
+</svg>

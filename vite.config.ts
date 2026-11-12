@@ -11,7 +11,9 @@ export default defineConfig({
       output: {
         manualChunks: {
           firebase: ['firebase/app', 'firebase/auth', 'firebase/firestore'],
-          motion: ['framer-motion', 'lucide-react'],
+          react: ['react', 'react-dom'],
+          motion: ['framer-motion'],
+          icons: ['lucide-react'],
         },
       },
     },

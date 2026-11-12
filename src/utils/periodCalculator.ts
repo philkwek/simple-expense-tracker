@@ -1,8 +1,8 @@
 import {
   DayExpenseGroup,
   ExpenseItem,
+  PeriodConfig,
   PeriodWindow,
-  UserSettings,
 } from '../types/expense';
 
 const WEEKDAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -103,7 +103,7 @@ function formatCountdown(now: Date, end: Date, offset: number): string {
  * - offset < 0: past cycles (-1 = immediately preceding cycle, etc.)
  */
 export function calculatePeriodWindow(
-  settings: UserSettings,
+  settings: PeriodConfig,
   now: Date = new Date(),
   cycleOffset = 0,
 ): PeriodWindow {
@@ -343,11 +343,149 @@ export function groupExpensesByDay(
   return Array.from(groupsMap.values());
 }
 
-function toLocalDateKey(d: Date): string {
+/**
+ * Formats a Date as a `YYYY-MM-DD` key in local time.
+ * Matches `DayExpenseGroup.dateKey` from {@link groupExpensesByDay}.
+ */
+export function toLocalDateKey(d: Date): string {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   return `${y}-${m}-${day}`;
+}
+
+/** Rounds a value to whole cents. */
+function roundToCents(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+/** Coerces a budget amount to a usable non-negative number (NaN/infinity/negatives -> 0). */
+function sanitizeBudgetAmount(amount: number): number {
+  return Number.isFinite(amount) && amount > 0 ? amount : 0;
+}
+
+/**
+ * Returns a timezone-independent day number for the local Y/M/D of a Date.
+ * Built from `Date.UTC` so DST transitions never shift the result by a fraction of a day.
+ */
+function localDayNumber(d: Date): number {
+  return Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 86400000;
+}
+
+/**
+ * Counts the local calendar days in a period window's `[start, end)` range.
+ *
+ * Uses calendar arithmetic (UTC-normalized local Y/M/D components) rather than
+ * dividing elapsed milliseconds by 86,400,000, so a week spanning a DST change
+ * still counts as 7 days. Always returns at least 1.
+ */
+export function getCycleDayCount(window: PeriodWindow): number {
+  const daySpan = Math.round(localDayNumber(window.end) - localDayNumber(window.start));
+  return Math.max(1, daySpan);
+}
+
+/**
+ * Computes the rolling daily allowance for every calendar day of a period window.
+ *
+ * For a day D: `max(0, amount - spentBefore(D)) / daysLeft(D)`, where
+ * `spentBefore(D)` is the total spent in the window before local midnight of D
+ * (spending on D itself does not reduce D's allowance) and `daysLeft(D)` counts D
+ * and every later day of the window. Values are rounded to cents.
+ *
+ * Expenses outside `[start, end)` are ignored. Runs in O(days + expenses).
+ * Negative or non-finite amounts are treated as 0.
+ */
+export function computeDailyAllowances(
+  amount: number,
+  window: PeriodWindow,
+  expenses: ExpenseItem[],
+): Map<string, number> {
+  const safeAmount = sanitizeBudgetAmount(amount);
+  const dayCount = getCycleDayCount(window);
+  const startTime = window.start.getTime();
+  const endTime = window.end.getTime();
+
+  const spentByDayKey = new Map<string, number>();
+  for (const expense of expenses) {
+    if (!Number.isFinite(expense.timestamp) || !Number.isFinite(expense.amount)) {
+      continue;
+    }
+    if (expense.timestamp < startTime || expense.timestamp >= endTime) {
+      continue;
+    }
+    const key = toLocalDateKey(new Date(expense.timestamp));
+    spentByDayKey.set(key, (spentByDayKey.get(key) ?? 0) + expense.amount);
+  }
+
+  const allowances = new Map<string, number>();
+  const startYear = window.start.getFullYear();
+  const startMonth = window.start.getMonth();
+  const startDate = window.start.getDate();
+  let spentBefore = 0;
+
+  for (let i = 0; i < dayCount; i += 1) {
+    const day = new Date(startYear, startMonth, startDate + i);
+    const key = toLocalDateKey(day);
+    const daysLeft = dayCount - i;
+    allowances.set(key, roundToCents(Math.max(0, safeAmount - spentBefore) / daysLeft));
+    spentBefore += spentByDayKey.get(key) ?? 0;
+  }
+
+  return allowances;
+}
+
+/**
+ * Summarizes the rolling daily allowance for `now`.
+ *
+ * Returns `null` when `now` falls outside `[start, end)`. Otherwise reports today's
+ * allowance (from {@link computeDailyAllowances}), today's spending, what is left of
+ * today's allowance (may be negative), and what is left of the whole cycle (may be negative).
+ */
+export function getDailyAllowanceSummary(
+  amount: number,
+  window: PeriodWindow,
+  expenses: ExpenseItem[],
+  now: Date = new Date(),
+): {
+  allowance: number;
+  spentToday: number;
+  remainingToday: number;
+  cycleRemaining: number;
+} | null {
+  const nowTime = now.getTime();
+  const startTime = window.start.getTime();
+  const endTime = window.end.getTime();
+
+  if (nowTime < startTime || nowTime >= endTime) {
+    return null;
+  }
+
+  const safeAmount = sanitizeBudgetAmount(amount);
+  const allowances = computeDailyAllowances(amount, window, expenses);
+  const todayKey = toLocalDateKey(now);
+  const allowance = allowances.get(todayKey) ?? 0;
+
+  let spentToday = 0;
+  let spentInWindow = 0;
+  for (const expense of expenses) {
+    if (!Number.isFinite(expense.timestamp) || !Number.isFinite(expense.amount)) {
+      continue;
+    }
+    if (expense.timestamp < startTime || expense.timestamp >= endTime) {
+      continue;
+    }
+    spentInWindow += expense.amount;
+    if (toLocalDateKey(new Date(expense.timestamp)) === todayKey) {
+      spentToday += expense.amount;
+    }
+  }
+
+  return {
+    allowance,
+    spentToday: roundToCents(spentToday),
+    remainingToday: roundToCents(allowance - spentToday),
+    cycleRemaining: roundToCents(safeAmount - spentInWindow),
+  };
 }
 
 /**
