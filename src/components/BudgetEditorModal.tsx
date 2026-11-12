@@ -84,8 +84,6 @@ const CADENCE_OPTIONS: readonly BudgetCadence[] = ['daily', 'weekly', 'monthly']
 const DAILY_HOURS =[0, 3, 4, 6, 9, 12, 18, 21];
 const MONTHLY_COMMON_DAYS = [1, 5, 10, 15, 20, 25, 28, 30, 31];
 const DEFAULT_REMINDER_TIME = '20:00';
-/** Preferred times when the user taps "Add reminder", in the order they're offered. */
-const PREFERRED_REMINDER_TIMES = ['13:00', '18:00', '09:00', '21:00', '12:00'];
 
 const LABEL_CLASS =
   'block text-[12px] font-semibold uppercase tracking-[0.06em] text-neutral-400 dark:text-neutral-500 mb-2';
@@ -411,29 +409,23 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
   };
 
   const handleReminderTimeChange = (index: number, time: string) => {
-    setReminderTimes((prev) =>
-      normalizeReminderTimes(
-        prev.map((value, i) => (i === index ? time : value)),
-      ),
-    );
+    // Keep row order stable while editing; sorting happens on save.
+    setReminderTimes((prev) => prev.map((value, i) => (i === index ? time : value)));
   };
 
   const handleRemoveReminder = (index: number) => {
     setReminderTimes((prev) => {
       if (prev.length <= 1) return prev;
-      return normalizeReminderTimes(prev.filter((_, i) => i !== index));
+      return prev.filter((_, i) => i !== index);
     });
   };
 
   const handleAddReminder = () => {
     setReminderTimes((prev) => {
       if (prev.length >= REMINDER_MAX_TIMES) return prev;
-      const used = new Set(prev);
-      const nextTime =
-        PREFERRED_REMINDER_TIMES.find((t) => !used.has(t)) ??
-        REMINDER_TIME_OPTIONS.find((t) => !used.has(t));
-      if (!nextTime) return prev;
-      return normalizeReminderTimes([...prev, nextTime]);
+      // One empty row at a time; the user picks its time.
+      if (prev.includes('')) return prev;
+      return [...prev, ''];
     });
   };
 
@@ -457,7 +449,7 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
       remindersEnabled || hadReminders
         ? {
             enabled: remindersEnabled,
-            times: reminderTimes,
+            times: normalizeReminderTimes(reminderTimes),
             timeZone:
               Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
           }
@@ -1007,7 +999,10 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
                       className="mt-2 space-y-2"
                     >
                       {reminderTimes.map((time, index) => (
-                        <div key={time} className="flex items-center gap-2">
+                        <div
+                          key={time || 'empty'}
+                          className="flex items-center gap-2"
+                        >
                           <select
                             aria-label={`Reminder ${index + 1}`}
                             value={time}
@@ -1016,6 +1011,11 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
                             }
                             className="flex-1 min-w-0 h-11 px-3.5 rounded-xl bg-black/[0.04] dark:bg-white/[0.06] text-[15px] text-neutral-800 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-[#007AFF]/40"
                           >
+                            {time === '' && (
+                              <option value="" disabled>
+                                Select time
+                              </option>
+                            )}
                             {REMINDER_TIME_OPTIONS.map((option) => (
                               <option
                                 key={option}
@@ -1033,7 +1033,11 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
                             <button
                               type="button"
                               onClick={() => handleRemoveReminder(index)}
-                              aria-label={`Remove reminder at ${formatReminderTime(time)}`}
+                              aria-label={
+                                time
+                                  ? `Remove reminder at ${formatReminderTime(time)}`
+                                  : 'Remove empty reminder'
+                              }
                               className="pressable touch-target w-9 h-9 shrink-0 rounded-full bg-black/[0.05] dark:bg-white/[0.08] text-neutral-500 dark:text-neutral-300 flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#007AFF]/40"
                             >
                               <X className="w-4 h-4" />
