@@ -139,6 +139,11 @@ export const ExpenseInputForm: React.FC<ExpenseInputFormProps> = ({
       aria-label="Quick add expense"
       className="w-full"
     >
+      <div className="flex items-center gap-1.5 px-1 mb-1.5 text-[12px] font-semibold uppercase tracking-wide text-neutral-500 dark:text-neutral-400">
+        <Plus className="w-3.5 h-3.5 stroke-[2.5]" />
+        <span>New expense</span>
+      </div>
+
       {/* Primary 2-Input Quick Entry Row */}
       <div className="flex items-center gap-2">
         <div className="flex-1 min-w-0">
@@ -215,7 +220,7 @@ export const ExpenseInputForm: React.FC<ExpenseInputFormProps> = ({
               ? customTime
                 ? 'Custom date & time'
                 : 'Custom date (Whole day)'
-              : 'Now (Auto-timestamp)'}
+              : 'Logged as now · change'}
           </span>
         </button>
 
