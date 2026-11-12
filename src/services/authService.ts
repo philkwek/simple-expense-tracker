@@ -18,9 +18,20 @@ import {
   writeBatch,
 } from 'firebase/firestore';
 import { auth, db, isFirebaseConfigured } from '../lib/firebase';
-import { UserProfile } from '../types/expense';
+import {
+  BudgetCadence,
+  DEFAULT_BUDGET_ID,
+  DEFAULT_USER_SETTINGS,
+  UserProfile,
+} from '../types/expense';
+import { ensureAccountBudgetsMigrated } from './expenseService';
+import { planGuestBudgetMerge } from './budgetMerge';
+import type { BudgetDocLike } from './budgetMerge';
 
 const LOCAL_AUTH_STORAGE_KEY = 'ledger_local_user_v1';
+
+/** Firestore allows 500 writes per batch; stay safely under it. */
+const MAX_BATCH_OPERATIONS = 400;
 
 type AuthListener = (user: UserProfile) => void;
 const localAuthListeners = new Set<AuthListener>();
@@ -62,9 +73,96 @@ function mapFirebaseUser(user: User): UserProfile {
   };
 }
 
+function isBudgetCadence(value: unknown): value is BudgetCadence {
+  return value === 'daily' || value === 'weekly' || value === 'monthly';
+}
+
+function normalizeCadence(value: unknown): BudgetCadence {
+  return isBudgetCadence(value) ? value : DEFAULT_USER_SETTINGS.cadence;
+}
+
+function normalizeCurrency(value: unknown): string {
+  return typeof value === 'string' && value.length === 3
+    ? value
+    : DEFAULT_USER_SETTINGS.currency;
+}
+
+function normalizeTime(value: unknown, fallback: number): number {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (
+    value &&
+    typeof (value as { toMillis?: () => number }).toMillis === 'function'
+  ) {
+    return (value as { toMillis: () => number }).toMillis();
+  }
+  return fallback;
+}
+
+function snapshotToBudgetDocLike(snapshotDoc: {
+  id: string;
+  data: () => Record<string, unknown>;
+}): BudgetDocLike {
+  const data = snapshotDoc.data();
+  return {
+    ...data,
+    id: snapshotDoc.id,
+    name: typeof data.name === 'string' ? data.name : 'Budget',
+    sortOrder: typeof data.sortOrder === 'number' ? data.sortOrder : 0,
+  };
+}
+
+/** Builds the budget that represents a legacy guest's single-budget settings. */
+function synthesizeGuestBudget(
+  settings: Record<string, unknown> | undefined,
+  now: number,
+): BudgetDocLike {
+  return {
+    id: DEFAULT_BUDGET_ID,
+    name: 'Main',
+    amount:
+      typeof settings?.budget === 'number'
+        ? settings.budget
+        : DEFAULT_USER_SETTINGS.budget,
+    cadence: normalizeCadence(settings?.cadence),
+    periodStartDay:
+      typeof settings?.periodStartDay === 'number'
+        ? settings.periodStartDay
+        : DEFAULT_USER_SETTINGS.periodStartDay,
+    currency: normalizeCurrency(settings?.currency),
+    sortOrder: 0,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
 /**
- * Migrates any guest expenses and settings from an anonymous user UID to a permanent user UID
- * so signing into an existing account never loses data entered while browsing as a guest.
+ * Extracts only the fields allowed by the Firestore budget security rules.
+ * Guest docs must never carry extra fields into the permanent user's account.
+ */
+function budgetDocFields(budget: BudgetDocLike, now: number) {
+  const createdAt = normalizeTime(budget.createdAt, now);
+  return {
+    name: budget.name,
+    amount:
+      typeof budget.amount === 'number' && Number.isFinite(budget.amount)
+        ? budget.amount
+        : 0,
+    cadence: normalizeCadence(budget.cadence),
+    periodStartDay:
+      typeof budget.periodStartDay === 'number'
+        ? budget.periodStartDay
+        : DEFAULT_USER_SETTINGS.periodStartDay,
+    currency: normalizeCurrency(budget.currency),
+    sortOrder: typeof budget.sortOrder === 'number' ? budget.sortOrder : 0,
+    createdAt,
+    updatedAt: normalizeTime(budget.updatedAt, createdAt),
+  };
+}
+
+/**
+ * Migrates any guest budgets, expenses and settings from an anonymous user UID to a
+ * permanent user UID so signing into an existing account never loses data entered
+ * while browsing as a guest.
  */
 async function migrateGuestDataInFirestore(
   fromGuestUid: string,
@@ -73,41 +171,116 @@ async function migrateGuestDataInFirestore(
   if (!db || !fromGuestUid || fromGuestUid === toPermanentUid) return;
 
   try {
-    const guestExpensesSnap = await getDocs(
-      collection(db, 'users', fromGuestUid, 'expenses'),
+    const firestore = db;
+    const guestSettingsRef = doc(
+      firestore,
+      'users',
+      fromGuestUid,
+      'settings',
+      'preference',
     );
-    if (!guestExpensesSnap.empty) {
-      const batch = writeBatch(db);
-      guestExpensesSnap.forEach((expenseDoc) => {
-        const targetRef = doc(
-          db!,
-          'users',
-          toPermanentUid,
-          'expenses',
-          expenseDoc.id,
-        );
-        batch.set(targetRef, expenseDoc.data());
-        batch.delete(expenseDoc.ref);
-      });
-      await batch.commit();
-    }
-
-    // If permanent user doesn't have settings yet, copy guest settings
     const permSettingsRef = doc(
-      db,
+      firestore,
       'users',
       toPermanentUid,
       'settings',
       'preference',
     );
-    const permSettingsSnap = await getDoc(permSettingsRef);
-    if (!permSettingsSnap.exists()) {
-      const guestSettingsSnap = await getDoc(
-        doc(db, 'users', fromGuestUid, 'settings', 'preference'),
+
+    // Migrate the account's own legacy data first, so guest budgets are added
+    // alongside its 'default' budget instead of standing in for it.
+    await ensureAccountBudgetsMigrated(toPermanentUid);
+
+    const [
+      guestBudgetsSnap,
+      accountBudgetsSnap,
+      guestExpensesSnap,
+      permSettingsSnap,
+      guestSettingsSnap,
+    ] = await Promise.all([
+      getDocs(collection(firestore, 'users', fromGuestUid, 'budgets')),
+      getDocs(collection(firestore, 'users', toPermanentUid, 'budgets')),
+      getDocs(collection(firestore, 'users', fromGuestUid, 'expenses')),
+      getDoc(permSettingsRef),
+      getDoc(guestSettingsRef),
+    ]);
+
+    const now = Date.now();
+    const accountBudgets = accountBudgetsSnap.docs.map(snapshotToBudgetDocLike);
+    let guestBudgets = guestBudgetsSnap.docs.map(snapshotToBudgetDocLike);
+
+    // Legacy guests (pre-multi-budget) have expenses but no budget documents.
+    if (guestBudgets.length === 0 && !guestExpensesSnap.empty) {
+      guestBudgets = [
+        synthesizeGuestBudget(
+          guestSettingsSnap.exists()
+            ? (guestSettingsSnap.data() as Record<string, unknown>)
+            : undefined,
+          now,
+        ),
+      ];
+    }
+
+    const { budgetsToWrite, idMap } = planGuestBudgetMerge(
+      guestBudgets,
+      accountBudgets,
+      () => doc(collection(firestore, 'users', toPermanentUid, 'budgets')).id,
+    );
+
+    const fallbackBudgetId = budgetsToWrite[0]?.id ?? DEFAULT_BUDGET_ID;
+    let batch = writeBatch(firestore);
+    let operationsInBatch = 0;
+
+    const flushIfFull = async (): Promise<void> => {
+      if (operationsInBatch < MAX_BATCH_OPERATIONS) return;
+      await batch.commit();
+      batch = writeBatch(firestore);
+      operationsInBatch = 0;
+    };
+
+    for (const budget of budgetsToWrite) {
+      batch.set(
+        doc(firestore, 'users', toPermanentUid, 'budgets', budget.id),
+        budgetDocFields(budget, now),
       );
-      if (guestSettingsSnap.exists()) {
-        await setDoc(permSettingsRef, guestSettingsSnap.data());
-      }
+      operationsInBatch += 1;
+      await flushIfFull();
+    }
+
+    for (const expenseDoc of guestExpensesSnap.docs) {
+      const data = expenseDoc.data();
+      const originalBudgetId =
+        typeof data.budgetId === 'string' && data.budgetId.length > 0
+          ? data.budgetId
+          : DEFAULT_BUDGET_ID;
+      const targetBudgetId = idMap[originalBudgetId] ?? fallbackBudgetId;
+
+      batch.set(
+        doc(firestore, 'users', toPermanentUid, 'expenses', expenseDoc.id),
+        { ...data, budgetId: targetBudgetId },
+      );
+      operationsInBatch += 1;
+      await flushIfFull();
+
+      batch.delete(expenseDoc.ref);
+      operationsInBatch += 1;
+      await flushIfFull();
+    }
+
+    // Guest budget documents are only removed once they have been copied.
+    for (const guestBudgetDoc of guestBudgetsSnap.docs) {
+      batch.delete(guestBudgetDoc.ref);
+      operationsInBatch += 1;
+      await flushIfFull();
+    }
+
+    if (operationsInBatch > 0) {
+      await batch.commit();
+    }
+
+    // If the permanent user doesn't have settings yet, copy guest settings.
+    if (!permSettingsSnap.exists() && guestSettingsSnap.exists()) {
+      await setDoc(permSettingsRef, guestSettingsSnap.data());
     }
   } catch (err) {
     console.warn('Non-fatal guest data migration notice:', err);
