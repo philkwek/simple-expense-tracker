@@ -276,7 +276,7 @@ export function buildReminderMessage(input: {
   const isZero = absolute < 0.005;
   const effectiveRemaining = isZero ? 0 : remaining;
   const money = formatCurrency(isZero ? 0 : absolute, currency);
-  const title = `Ledger · ${budgetName}`;
+  const title = budgetName;
 
   if (kind === 'today') {
     const body =

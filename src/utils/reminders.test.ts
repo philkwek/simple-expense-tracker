@@ -196,7 +196,7 @@ describe('buildReminderMessage', () => {
         remaining: 12.5,
       }),
     ).toEqual({
-      title: 'Ledger · Groceries',
+      title: 'Groceries',
       body: `${money} left today. Anything to log?`,
     });
   });
@@ -211,7 +211,7 @@ describe('buildReminderMessage', () => {
         remaining: -3.25,
       }),
     ).toEqual({
-      title: 'Ledger · Fun',
+      title: 'Fun',
       body: `${money} over today's budget. Anything to log?`,
     });
   });
@@ -227,7 +227,7 @@ describe('buildReminderMessage', () => {
         cycleLastDayLabel: 'Nov 30',
       }),
     ).toEqual({
-      title: 'Ledger · Travel',
+      title: 'Travel',
       body: `${money} left until Nov 30. Anything to log?`,
     });
   });
@@ -242,7 +242,7 @@ describe('buildReminderMessage', () => {
         remaining: 40,
       }),
     ).toEqual({
-      title: 'Ledger · Travel',
+      title: 'Travel',
       body: `${money} left this cycle. Anything to log?`,
     });
   });
@@ -258,7 +258,7 @@ describe('buildReminderMessage', () => {
         cycleLastDayLabel: 'Nov 30',
       }),
     ).toEqual({
-      title: 'Ledger · Travel',
+      title: 'Travel',
       body: `${money} over budget this cycle. Anything to log?`,
     });
   });

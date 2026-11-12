@@ -217,7 +217,7 @@ describe('buildMessageFromSums', () => {
     );
 
     const money = formatCurrency(7, 'SGD');
-    expect(message.title).toBe('Ledger · Groceries');
+    expect(message.title).toBe('Groceries');
     expect(message.body).toBe(`${money} left today. Anything to log?`);
     expect(message.body.startsWith(`${money} left today`)).toBe(true);
   });
@@ -240,7 +240,7 @@ describe('buildMessageFromSums', () => {
       NOW,
     );
 
-    expect(message.title).toBe('Ledger · Travel');
+    expect(message.title).toBe('Travel');
     expect(message.body).toBe(
       `${formatCurrency(250, 'SGD')} left until Nov 30. Anything to log?`,
     );
