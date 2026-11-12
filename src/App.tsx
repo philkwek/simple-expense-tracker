@@ -1,23 +1,30 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { User, Cloud } from 'lucide-react';
 import {
+  Budget,
+  BudgetInput,
   DEFAULT_USER_SETTINGS,
   ExpenseItem,
+  legacySettingsToBudget,
   SyncState,
   UserProfile,
-  UserSettings,
 } from './types/expense';
 import { calculatePeriodWindow } from './utils/periodCalculator';
 import { subscribeToAuth } from './services/authService';
 import {
   addExpense,
   batchUpdateExpenses,
+  countBudgetExpenses,
+  createBudget,
+  deleteBudget,
   deleteExpense,
   ExpenseUpdateEntry,
+  getStoredActiveBudgetId,
   restoreExpense,
+  setStoredActiveBudgetId,
+  subscribeToBudgets,
   subscribeToPeriodExpenses,
-  subscribeToSettings,
-  updateUserSettings,
+  updateBudget,
 } from './services/expenseService';
 import { BudgetCard } from './components/BudgetCard';
 import {
@@ -26,7 +33,11 @@ import {
 } from './components/ExpenseInputForm';
 import { ExpenseList } from './components/ExpenseList';
 import { UndoToast } from './components/UndoToast';
-import { SettingsModal } from './components/SettingsModal';
+import { BudgetEditorModal } from './components/BudgetEditorModal';
+import { BudgetSwitcher } from './components/BudgetSwitcher';
+
+/** Shown for the brief moment before the first budgets snapshot arrives. */
+const PLACEHOLDER_BUDGET: Budget = legacySettingsToBudget(DEFAULT_USER_SETTINGS, 0);
 import { AccountModal } from './components/AccountModal';
 
 export function App() {
@@ -36,12 +47,13 @@ export function App() {
     displayName: null,
     isAnonymous: true,
   });
-  const [settings, setSettings] = useState<UserSettings>(DEFAULT_USER_SETTINGS);
+  const [budgets, setBudgets] = useState<Budget[]>([]);
+  const [activeBudgetId, setActiveBudgetId] = useState<string | null>(null);
   const [expenses, setExpenses] = useState<ExpenseItem[]>([]);
   const [periodOffset, setPeriodOffset] = useState<number>(0);
   const [syncState, setSyncState] = useState<SyncState>('local');
 
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [editorMode, setEditorMode] = useState<'create' | 'edit' | null>(null);
   const [isAccountOpen, setIsAccountOpen] = useState(false);
 
   const [deletedExpense, setDeletedExpense] = useState<ExpenseItem | null>(null);
@@ -55,41 +67,44 @@ export function App() {
     return unsubscribe;
   }, []);
 
-  // 2. Subscribe to User Settings in Firestore
+  // 2. Subscribe to the user's budgets (migrates single-budget accounts on first load)
   useEffect(() => {
-    const unsubscribe = subscribeToSettings(
-      user.uid,
-      (nextSettings) => {
-        setSettings(nextSettings);
-      },
-      (state) => {
-        setSyncState(state);
-      },
-    );
+    setBudgets([]);
+    setActiveBudgetId(getStoredActiveBudgetId(user.uid));
+    const unsubscribe = subscribeToBudgets(user.uid, setBudgets, setSyncState);
     return unsubscribe;
   }, [user.uid]);
 
-  // 3. Calculate active or historical PeriodWindow from settings + periodOffset
-  const periodWindow = useMemo(
-    () => calculatePeriodWindow(settings, new Date(), periodOffset),
-    [settings, periodOffset],
-  );
+  // Falls back to the first budget when the remembered one no longer exists
+  const activeBudget: Budget =
+    budgets.find((b) => b.id === activeBudgetId) ?? budgets[0] ?? PLACEHOLDER_BUDGET;
+  const hasBudgets = budgets.length > 0;
 
-  // 4. Subscribe to expenses bounded to [periodWindow.start, periodWindow.end)
+  // 3. Calculate active or historical PeriodWindow from the active budget + periodOffset
+  const { cadence, periodStartDay } = activeBudget;
+  const periodWindow = useMemo(
+    () => calculatePeriodWindow({ cadence, periodStartDay }, new Date(), periodOffset),
+    [cadence, periodStartDay, periodOffset],
+  );
+  const periodStartMs = periodWindow.start.getTime();
+  const periodEndMs = periodWindow.end.getTime();
+
+  // 4. Subscribe to the active budget's expenses bounded to [start, end)
   useEffect(() => {
+    if (!hasBudgets) {
+      setExpenses([]);
+      return;
+    }
     const unsubscribe = subscribeToPeriodExpenses(
       user.uid,
-      periodWindow.start,
-      periodWindow.end,
-      (items) => {
-        setExpenses(items);
-      },
-      (state) => {
-        setSyncState(state);
-      },
+      activeBudget.id,
+      new Date(periodStartMs),
+      new Date(periodEndMs),
+      setExpenses,
+      setSyncState,
     );
     return unsubscribe;
-  }, [user.uid, periodWindow.start, periodWindow.end]);
+  }, [user.uid, hasBudgets, activeBudget.id, periodStartMs, periodEndMs]);
 
   // Total spent in active period window
   const totalSpent = useMemo(
@@ -101,11 +116,11 @@ export function App() {
   );
 
   const handleAddExpense = async (input: CreateExpenseInput) => {
-    await addExpense(user.uid, input);
+    await addExpense(user.uid, { ...input, budgetId: activeBudget.id });
     // If the user logged an expense while viewing a past period, jump back to current period if the expense is for now
     if (
       periodOffset !== 0 &&
-      input.timestamp >= calculatePeriodWindow(settings, new Date(), 0).start.getTime()
+      input.timestamp >= calculatePeriodWindow(activeBudget, new Date(), 0).start.getTime()
     ) {
       setPeriodOffset(0);
     }
@@ -148,10 +163,37 @@ export function App() {
     setDeletedExpense(null);
   };
 
-  const handleSaveSettings = async (updates: Partial<UserSettings>) => {
-    await updateUserSettings(user.uid, updates);
+  const handleSelectBudget = (budgetId: string) => {
+    if (budgetId === activeBudget.id) return;
+    setActiveBudgetId(budgetId);
+    setStoredActiveBudgetId(user.uid, budgetId);
     setPeriodOffset(0);
   };
+
+  const handleSaveBudget = async (input: BudgetInput) => {
+    if (editorMode === 'create') {
+      const created = await createBudget(user.uid, input);
+      handleSelectBudget(created.id);
+    } else {
+      await updateBudget(user.uid, activeBudget, input);
+      setPeriodOffset(0);
+    }
+  };
+
+  const handleDeleteBudget = async () => {
+    if (budgets.length <= 1) return;
+    const deletedId = activeBudget.id;
+    const next = budgets.find((b) => b.id !== deletedId);
+    await deleteBudget(user.uid, deletedId);
+    if (next) handleSelectBudget(next.id);
+    // The deleted budget's expenses are gone; an undo would restore into a missing budget
+    if (deletedExpense?.budgetId === deletedId) handleDismissUndo();
+  };
+
+  // The undo toast belongs to the budget the expense came from, which may not be the active one
+  const deletedExpenseCurrency =
+    budgets.find((b) => b.id === deletedExpense?.budgetId)?.currency ??
+    activeBudget.currency;
 
   const accountBadgeLabel = user.isAnonymous
     ? 'Guest'
@@ -192,11 +234,19 @@ export function App() {
 
         {/* Main Content Stack */}
         <main className="flex-1 w-full space-y-5">
+          {/* 0. Budget Switcher */}
+          <BudgetSwitcher
+            budgets={budgets}
+            activeBudgetId={activeBudget.id}
+            onSelectBudget={handleSelectBudget}
+            onCreateBudget={() => setEditorMode('create')}
+          />
+
           {/* 1. Dashboard Budget Overview */}
           <BudgetCard
-            budget={settings.budget}
+            budget={activeBudget.amount}
             totalSpent={totalSpent}
-            currency={settings.currency}
+            currency={activeBudget.currency}
             period={periodWindow}
             periodOffset={periodOffset}
             onPrevPeriod={() => setPeriodOffset((prev) => prev - 1)}
@@ -204,19 +254,19 @@ export function App() {
               setPeriodOffset((prev) => Math.min(0, prev + 1))
             }
             onResetPeriod={() => setPeriodOffset(0)}
-            onOpenSettings={() => setIsSettingsOpen(true)}
+            onOpenSettings={() => setEditorMode('edit')}
           />
 
           {/* 2. Quick 2-Input Expense Form with Expandable Date/Time Override */}
           <ExpenseInputForm
-            currency={settings.currency}
+            currency={activeBudget.currency}
             onAddExpense={handleAddExpense}
           />
 
           {/* 3. Itemized Period Feed (Grouped by Day, Swipe-to-Delete, Batch Edit Mode) */}
           <ExpenseList
             expenses={expenses}
-            currency={settings.currency}
+            currency={activeBudget.currency}
             onBatchUpdateExpenses={handleBatchUpdateExpenses}
             onDeleteExpense={handleDeleteExpense}
           />
@@ -226,17 +276,21 @@ export function App() {
       {/* Non-blocking 5-second Undo Toast (Apple Forgiveness Pattern) */}
       <UndoToast
         deletedExpense={deletedExpense}
-        currency={settings.currency}
+        currency={deletedExpenseCurrency}
         onUndo={handleUndoDelete}
         onDismiss={handleDismissUndo}
       />
 
-      {/* Budget & Cadence Settings Sheet */}
-      <SettingsModal
-        isOpen={isSettingsOpen}
-        onClose={() => setIsSettingsOpen(false)}
-        settings={settings}
-        onSaveSettings={handleSaveSettings}
+      {/* Create / Edit Budget Sheet */}
+      <BudgetEditorModal
+        isOpen={editorMode !== null}
+        onClose={() => setEditorMode(null)}
+        mode={editorMode ?? 'edit'}
+        budget={editorMode === 'edit' ? activeBudget : null}
+        canDelete={budgets.length > 1}
+        onSave={handleSaveBudget}
+        onDelete={handleDeleteBudget}
+        getExpenseCount={() => countBudgetExpenses(user.uid, activeBudget.id)}
       />
 
       {/* Account Management & Cloud Sync Sheet */}
