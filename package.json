@@ -8,7 +8,8 @@
     "build": "tsc -b && vite build",
     "deploy": "npm run build && firebase deploy",
     "test": "vitest",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "icons": "node scripts/generate-icons.mjs"
   },
   "dependencies": {
     "clsx": "^2.1.1",
@@ -20,6 +21,7 @@
     "tailwind-merge": "^2.5.4"
   },
   "devDependencies": {
+    "@resvg/resvg-js": "^2.6.2",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.3",

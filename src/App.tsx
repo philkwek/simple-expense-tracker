@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, lazy, Suspense } from 'react';
 import { User, Cloud } from 'lucide-react';
 import {
   Budget,
@@ -33,12 +33,27 @@ import {
 } from './components/ExpenseInputForm';
 import { ExpenseList } from './components/ExpenseList';
 import { UndoToast } from './components/UndoToast';
-import { BudgetEditorModal } from './components/BudgetEditorModal';
 import { BudgetSwitcher } from './components/BudgetSwitcher';
 
 /** Shown for the brief moment before the first budgets snapshot arrives. */
 const PLACEHOLDER_BUDGET: Budget = legacySettingsToBudget(DEFAULT_USER_SETTINGS, 0);
-import { AccountModal } from './components/AccountModal';
+
+// The sheets aren't needed for first paint, so they ship in their own chunks.
+const loadBudgetEditor = () => import('./components/BudgetEditorModal');
+const loadAccountModal = () => import('./components/AccountModal');
+const BudgetEditorModal = lazy(() =>
+  loadBudgetEditor().then((m) => ({ default: m.BudgetEditorModal })),
+);
+const AccountModal = lazy(() =>
+  loadAccountModal().then((m) => ({ default: m.AccountModal })),
+);
+
+/** True from the first time `open` is true; keeps a lazy sheet mounted so its exit animation still runs. */
+function useHasOpened(open: boolean) {
+  const [hasOpened, setHasOpened] = useState(open);
+  if (open && !hasOpened) setHasOpened(true);
+  return hasOpened;
+}
 
 export function App() {
   const [user, setUser] = useState<UserProfile>({
@@ -55,6 +70,22 @@ export function App() {
 
   const [editorMode, setEditorMode] = useState<'create' | 'edit' | null>(null);
   const [isAccountOpen, setIsAccountOpen] = useState(false);
+  const hasOpenedEditor = useHasOpened(editorMode !== null);
+  const hasOpenedAccount = useHasOpened(isAccountOpen);
+
+  // Fetch the sheet chunks once the browser is idle so the first open is instant.
+  useEffect(() => {
+    const prefetch = () => {
+      void loadBudgetEditor();
+      void loadAccountModal();
+    };
+    if ('requestIdleCallback' in window) {
+      const id = window.requestIdleCallback(prefetch, { timeout: 4000 });
+      return () => window.cancelIdleCallback(id);
+    }
+    const id = setTimeout(prefetch, 2000);
+    return () => clearTimeout(id);
+  }, []);
 
   const [deletedExpense, setDeletedExpense] = useState<ExpenseItem | null>(null);
   const undoTimerRef = useRef<number | null>(null);
@@ -207,7 +238,7 @@ export function App() {
         <header className="w-full flex items-center justify-between gap-2 py-1 mb-4">
           <div className="flex items-center min-w-0">
             <span className="text-[16px] font-bold tracking-tight text-neutral-900 dark:text-white">
-              Expense Tracker
+              Ledger
             </span>
           </div>
 
@@ -281,26 +312,32 @@ export function App() {
         onDismiss={handleDismissUndo}
       />
 
-      {/* Create / Edit Budget Sheet */}
-      <BudgetEditorModal
-        isOpen={editorMode !== null}
-        onClose={() => setEditorMode(null)}
-        mode={editorMode ?? 'edit'}
-        budget={editorMode === 'edit' ? activeBudget : null}
-        canDelete={budgets.length > 1}
-        onSave={handleSaveBudget}
-        onDelete={handleDeleteBudget}
-        getExpenseCount={() => countBudgetExpenses(user.uid, activeBudget.id)}
-      />
+      <Suspense fallback={null}>
+        {/* Create / Edit Budget Sheet */}
+        {hasOpenedEditor && (
+          <BudgetEditorModal
+            isOpen={editorMode !== null}
+            onClose={() => setEditorMode(null)}
+            mode={editorMode ?? 'edit'}
+            budget={editorMode === 'edit' ? activeBudget : null}
+            canDelete={budgets.length > 1}
+            onSave={handleSaveBudget}
+            onDelete={handleDeleteBudget}
+            getExpenseCount={() => countBudgetExpenses(user.uid, activeBudget.id)}
+          />
+        )}
 
-      {/* Account Management & Cloud Sync Sheet */}
-      <AccountModal
-        isOpen={isAccountOpen}
-        onClose={() => setIsAccountOpen(false)}
-        user={user}
-        syncState={syncState}
-        onUserUpdated={setUser}
-      />
+        {/* Account Management & Cloud Sync Sheet */}
+        {hasOpenedAccount && (
+          <AccountModal
+            isOpen={isAccountOpen}
+            onClose={() => setIsAccountOpen(false)}
+            user={user}
+            syncState={syncState}
+            onUserUpdated={setUser}
+          />
+        )}
+      </Suspense>
     </div>
   );
 }

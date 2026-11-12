@@ -6,12 +6,29 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, viewport-fit=cover"
     />
+    <title>Ledger — Simple Expense Tracker</title>
+    <meta
+      name="description"
+      content="Ledger is a simple, fast expense tracker. Log spending in seconds and see what's left in each budget."
+    />
+    <meta name="color-scheme" content="light dark" />
+
+    <!-- Warm up connections to Firebase before the JS bundle asks for them -->
+    <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin />
+    <link rel="preconnect" href="https://identitytoolkit.googleapis.com" crossorigin />
+    <link rel="preconnect" href="https://securetoken.googleapis.com" crossorigin />
+
+    <!-- Icons & install -->
+    <link rel="icon" href="/favicon.ico" sizes="48x48" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
-    <meta
-      name="apple-mobile-web-app-status-bar-style"
-      content="default"
-    />
+    <meta name="apple-mobile-web-app-title" content="Ledger" />
+    <meta name="application-name" content="Ledger" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta
       name="theme-color"
       content="#f5f5f7"
@@ -19,13 +36,26 @@
     />
     <meta
       name="theme-color"
-      content="#0a0a0c"
+      content="#000000"
       media="(prefers-color-scheme: dark)"
     />
-    <title>Ledger — Simple Expense Tracker</title>
+
+    <!-- Link previews -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Ledger" />
+    <meta property="og:title" content="Ledger — Simple Expense Tracker" />
+    <meta
+      property="og:description"
+      content="Log spending in seconds and see what's left in each budget."
+    />
+    <meta property="og:image" content="/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta name="twitter:card" content="summary_large_image" />
   </head>
-  <body class="bg-[#f5f5f7] dark:bg-[#0a0a0c] text-neutral-900 dark:text-neutral-100 antialiased selection:bg-blue-500/20">
+  <body>
     <div id="root"></div>
+    <noscript>Ledger needs JavaScript enabled to run.</noscript>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
