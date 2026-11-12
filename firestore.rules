@@ -15,6 +15,18 @@ rules_version = '2';
 //   - currency: string (required, size == 3) - 3-letter ISO currency code (e.g., 'USD')
 //   - updatedAt: number | timestamp (optional, >= 0 if number) - Last modification timestamp
 //
+// Collection: users/{userId}/budgets/{budgetId}
+// Document ID: Auto-generated, or 'default' for the budget migrated from 'preference' (<= 128 chars)
+// Fields:
+//   - name: string (required, 1 <= size <= 40) - Display name, e.g. "Groceries"
+//   - amount: number (required, 0 <= amount <= 100,000,000) - Periodic spending allowance
+//   - cadence: string (required, enum: 'daily' | 'weekly' | 'monthly') - Reset cycle cadence
+//   - periodStartDay: int (required, 0 <= periodStartDay <= 31) - Cycle cutoff hour/day/date
+//   - currency: string (required, size == 3) - 3-letter ISO currency code
+//   - sortOrder: int (required, >= 0) - Position in the budget switcher
+//   - createdAt: number | timestamp (required, immutable on update) - Record creation time
+//   - updatedAt: number | timestamp (optional) - Last modification timestamp
+//
 // Collection: users/{userId}/expenses/{expenseId}
 // Document ID: Auto-generated or restored document ID (<= 128 chars)
 // Fields:
@@ -23,6 +35,8 @@ rules_version = '2';
 //   - timestamp: number | timestamp (required, >= 0 if number) - Epoch ms when expense occurred
 //   - createdAt: number | timestamp (required, immutable on update, >= 0 if number) - Record creation time
 //   - hasTime: bool (optional) - Whether a specific time of day was recorded (false for whole-day manual entries)
+//   - budgetId: string (optional during rollout, 1 <= size <= 128) - Budget the expense counts against.
+//               Can be added to an expense that lacks it (migration) but never changed once set.
 //
 // ===============================================================
 
@@ -95,8 +109,32 @@ service cloud.firestore {
              (!('updatedAt' in data) || isValidTimeValue(data.updatedAt));
     }
 
+    function isValidBudget(data) {
+      return hasOnlyAllowedFields(['name', 'amount', 'cadence', 'periodStartDay', 'currency', 'sortOrder', 'createdAt', 'updatedAt']) &&
+             hasRequiredFields(['name', 'amount', 'cadence', 'periodStartDay', 'currency', 'sortOrder', 'createdAt']) &&
+             validStringLength('name', 1, 40) &&
+             isValidNumberInRange(data.amount, 0, 100000000) &&
+             data.cadence is string &&
+             data.cadence in ['daily', 'weekly', 'monthly'] &&
+             data.periodStartDay is int &&
+             data.periodStartDay >= 0 &&
+             data.periodStartDay <= 31 &&
+             validStringLength('currency', 3, 3) &&
+             data.sortOrder is int &&
+             data.sortOrder >= 0 &&
+             isValidTimeValue(data.createdAt) &&
+             (!('updatedAt' in data) || isValidTimeValue(data.updatedAt));
+    }
+
+    // budgetId may be added to a legacy expense, but never moved between budgets
+    function isBudgetIdUnchanged() {
+      return !('budgetId' in resource.data) ||
+             request.resource.data.budgetId == resource.data.budgetId;
+    }
+
     function isValidExpense(data) {
-      return hasOnlyAllowedFields(['title', 'amount', 'timestamp', 'createdAt', 'hasTime']) &&
+      return hasOnlyAllowedFields(['title', 'amount', 'timestamp', 'createdAt', 'hasTime', 'budgetId']) &&
+             (!('budgetId' in data) || validStringLength('budgetId', 1, 128)) &&
              hasRequiredFields(['title', 'amount', 'timestamp', 'createdAt']) &&
              validStringLength('title', 1, 120) &&
              isValidNumberInRange(data.amount, 0, 100000000) &&
@@ -122,6 +160,18 @@ service cloud.firestore {
         allow delete: if isOwner(userId) && settingId == 'preference';
       }
 
+      // User Budgets Subcollection
+      match /budgets/{budgetId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) &&
+                         budgetId.size() <= 128 &&
+                         isValidBudget(request.resource.data);
+        allow update: if isOwner(userId) &&
+                         isValidBudget(request.resource.data) &&
+                         areImmutableFieldsUnchanged(['createdAt']);
+        allow delete: if isOwner(userId);
+      }
+
       // User Expenses Subcollection
       match /expenses/{expenseId} {
         allow read: if isOwner(userId);
@@ -131,7 +181,8 @@ service cloud.firestore {
         allow update: if isOwner(userId) &&
                          expenseId.size() <= 128 &&
                          isValidExpense(request.resource.data) &&
-                         areImmutableFieldsUnchanged(['createdAt']);
+                         areImmutableFieldsUnchanged(['createdAt']) &&
+                         isBudgetIdUnchanged();
         allow delete: if isOwner(userId);
       }
     }
