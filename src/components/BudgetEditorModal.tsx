@@ -99,6 +99,18 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
   const [isDeleting, setIsDeleting] = useState(false);
 
   const sheetY = useMotionValue(0);
+
+  // Measured height of the active cadence panel, so the container can animate between sizes.
+  const cadencePanelRef = useRef<HTMLDivElement>(null);
+  const [cadencePanelHeight, setCadencePanelHeight] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    const el = cadencePanelRef.current;
+    if (!isOpen || !el) return;
+    setCadencePanelHeight(el.offsetHeight);
+    const observer = new ResizeObserver(() => setCadencePanelHeight(el.offsetHeight));
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [isOpen]);
   const dragStateRef = useRef<{
     startY: number;
     lastY: number;
@@ -351,9 +363,11 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
             className="fixed inset-0 bg-black/40 backdrop-blur-sm"
           />
 
-          {/* Bottom Sheet / Modal Surface */}
+          {/*
+            Two layers so the enter/exit slide and the drag offset never fight over one `y`:
+            the outer layer owns the presence animation, the inner surface owns the drag.
+          */}
           <motion.div
-            style={{ y: sheetY }}
             initial={
               prefersReducedMotion
                 ? { opacity: 0 }
@@ -370,7 +384,12 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
                 : { opacity: 0, y: 120, scale: 0.98 }
             }
             transition={springTransition}
-            className="relative z-10 w-full max-w-md rounded-t-[28px] sm:rounded-[28px] material-glass bg-white/95 dark:bg-neutral-900/95 p-5 pb-8 sm:pb-6 shadow-2xl max-h-[90dvh] overflow-y-auto"
+            className="relative z-10 w-full max-w-md"
+          >
+          {/* Bottom Sheet / Modal Surface */}
+          <motion.div
+            style={{ y: sheetY }}
+            className="w-full rounded-t-[28px] sm:rounded-[28px] material-glass bg-white/95 dark:bg-neutral-900/95 p-5 pb-8 sm:pb-6 shadow-2xl max-h-[90dvh] overflow-y-auto"
           >
             {/* Grab Handle */}
             <div
@@ -501,10 +520,24 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
               </div>
 
               {/* 4. Dynamic Cycle Reset Boundary Selector */}
+              {/* Height follows the active panel; panels crossfade (quick out, then in). */}
+              <motion.div
+                initial={false}
+                animate={{ height: cadencePanelHeight ?? 'auto' }}
+                transition={springTransition}
+                className="-mx-1 -my-1 overflow-hidden"
+              >
+              <div ref={cadencePanelRef} className="px-1 py-1">
+              <AnimatePresence mode="wait" initial={false}>
               <motion.div
                 key={cadence}
-                initial={{ opacity: 0, y: prefersReducedMotion ? 0 : 4 }}
+                initial={{ opacity: 0, y: prefersReducedMotion ? 0 : 6 }}
                 animate={{ opacity: 1, y: 0 }}
+                exit={{
+                  opacity: 0,
+                  y: prefersReducedMotion ? 0 : -6,
+                  transition: { duration: 0.1, ease: 'easeIn' },
+                }}
                 transition={springTransition}
                 className="space-y-2"
               >
@@ -632,6 +665,9 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
                   </div>
                 )}
               </motion.div>
+              </AnimatePresence>
+              </div>
+              </motion.div>
 
               {/* 5. Currency Selector */}
               <div>
@@ -741,6 +777,7 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
                 )}
               </AnimatePresence>
             </form>
+          </motion.div>
           </motion.div>
         </div>
       )}
