@@ -17,6 +17,12 @@ interface BudgetCardProps {
   currency: string;
   period: PeriodWindow;
   periodOffset: number;
+  /** Rolling daily allowance summary for the current day (weekly/monthly daily tracking). */
+  todayAllowance?: {
+    allowance: number;
+    spentToday: number;
+    remainingToday: number;
+  } | null;
   onPrevPeriod: () => void;
   onNextPeriod: () => void;
   onResetPeriod: () => void;
@@ -29,6 +35,7 @@ export const BudgetCard: React.FC<BudgetCardProps> = ({
   currency,
   period,
   periodOffset,
+  todayAllowance,
   onPrevPeriod,
   onNextPeriod,
   onResetPeriod,
@@ -39,6 +46,25 @@ export const BudgetCard: React.FC<BudgetCardProps> = ({
   const isOverBudget = leftover < -0.004;
   const remainingRatio = safeBudget > 0 ? leftover / safeBudget : 0;
   const isWarning = !isOverBudget && safeBudget > 0 && remainingRatio < 0.15;
+  const isOverTodayAllowance =
+    todayAllowance != null && todayAllowance.remainingToday < -0.004;
+  const todaySpentPercentage = !todayAllowance
+    ? 0
+    : todayAllowance.allowance > 0
+      ? Math.min(100, Math.max(0, (todayAllowance.spentToday / todayAllowance.allowance) * 100))
+      : todayAllowance.spentToday > 0
+        ? 100
+        : 0;
+  const isTodayWarning =
+    todayAllowance != null &&
+    !isOverTodayAllowance &&
+    todayAllowance.allowance > 0 &&
+    todayAllowance.remainingToday / todayAllowance.allowance < 0.15;
+  const todayBarColorClass = isOverTodayAllowance
+    ? 'bg-[#FF3B30] dark:bg-[#FF453A]'
+    : isTodayWarning
+      ? 'bg-[#FF9500] dark:bg-[#FF9F0A]'
+      : 'bg-[#34C759] dark:bg-[#30D158]';
 
   const spentPercentage =
     safeBudget > 0 ? Math.min(100, Math.max(0, (totalSpent / safeBudget) * 100)) : totalSpent > 0 ? 100 : 0;
@@ -200,6 +226,46 @@ export const BudgetCard: React.FC<BudgetCardProps> = ({
               {formatCurrency(safeBudget, currency)}
             </div>
           </div>
+
+          {/* Rolling Daily Allowance Tile (weekly/monthly daily tracking) */}
+          {todayAllowance && (
+            <div className="col-span-2 rounded-2xl bg-white/90 dark:bg-neutral-900/80 px-3.5 py-2.5 border border-black/[0.055] dark:border-white/[0.08] shadow-[0_1px_2px_rgba(0,0,0,0.03)]">
+              <div className="flex items-end justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-[11px] font-medium uppercase tracking-[0.05em] text-neutral-400 dark:text-neutral-500">
+                  {isOverTodayAllowance ? 'Over Today' : 'Left Today'}
+                </div>
+                <div
+                  className={`text-[16px] font-semibold tabular-nums tracking-tight mt-0.5 ${
+                    isOverTodayAllowance
+                      ? 'text-[#FF3B30] dark:text-[#FF453A]'
+                      : 'text-neutral-800 dark:text-neutral-100'
+                  }`}
+                >
+                  {formatCurrency(Math.abs(todayAllowance.remainingToday), currency)}
+                </div>
+              </div>
+              <div className="text-right text-[12px] font-medium tabular-nums text-neutral-400 dark:text-neutral-500 pb-0.5">
+                of {formatCurrency(todayAllowance.allowance, currency)} daily
+              </div>
+              </div>
+              <div
+                role="progressbar"
+                aria-valuenow={Math.round(todaySpentPercentage)}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-label="Today's allowance usage percentage"
+                className="mt-2 h-2 w-full rounded-full bg-black/[0.06] dark:bg-white/[0.08] overflow-hidden p-0.5"
+              >
+                <motion.div
+                  initial={false}
+                  animate={{ width: `${todaySpentPercentage}%` }}
+                  transition={SPRING_MOMENTUM}
+                  className={`h-full rounded-full ${todayBarColorClass}`}
+                />
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </motion.section>

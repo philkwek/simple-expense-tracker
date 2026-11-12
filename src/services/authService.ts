@@ -153,6 +153,7 @@ function budgetDocFields(budget: BudgetDocLike, now: number) {
         ? budget.periodStartDay
         : DEFAULT_USER_SETTINGS.periodStartDay,
     currency: normalizeCurrency(budget.currency),
+    dailyTracking: budget.dailyTracking === true,
     sortOrder: typeof budget.sortOrder === 'number' ? budget.sortOrder : 0,
     createdAt,
     updatedAt: normalizeTime(budget.updatedAt, createdAt),

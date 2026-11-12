@@ -101,6 +101,7 @@ export function normalizeBudgetInput(input: BudgetInput): BudgetInput {
       typeof input.currency === 'string' && input.currency.length === 3
         ? input.currency
         : DEFAULT_USER_SETTINGS.currency,
+    dailyTracking: input.dailyTracking === true && cadence !== 'daily',
   };
 }
 
@@ -129,6 +130,7 @@ function parseBudget(id: string, data: Record<string, unknown>): Budget {
     periodStartDay:
       typeof data.periodStartDay === 'number' ? data.periodStartDay : 1,
     currency: typeof data.currency === 'string' ? data.currency : 'USD',
+    dailyTracking: data.dailyTracking === true,
   });
   return {
     ...base,
@@ -167,6 +169,7 @@ function budgetToDoc(budget: Budget) {
     cadence: budget.cadence,
     periodStartDay: budget.periodStartDay,
     currency: budget.currency,
+    dailyTracking: budget.dailyTracking === true,
     sortOrder: budget.sortOrder,
     createdAt: budget.createdAt,
     updatedAt: budget.updatedAt ?? Date.now(),

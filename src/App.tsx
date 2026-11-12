@@ -9,7 +9,11 @@ import {
   SyncState,
   UserProfile,
 } from './types/expense';
-import { calculatePeriodWindow } from './utils/periodCalculator';
+import {
+  calculatePeriodWindow,
+  computeDailyAllowances,
+  getDailyAllowanceSummary,
+} from './utils/periodCalculator';
 import { subscribeToAuth } from './services/authService';
 import {
   addExpense,
@@ -146,6 +150,32 @@ export function App() {
     [expenses],
   );
 
+  // Rolling daily allowance (weekly/monthly budgets with dailyTracking enabled)
+  const showDailyAllowance =
+    activeBudget.dailyTracking === true && activeBudget.cadence !== 'daily';
+
+  const dailyAllowances = useMemo(
+    () =>
+      showDailyAllowance
+        ? computeDailyAllowances(activeBudget.amount, periodWindow, expenses)
+        : null,
+    [showDailyAllowance, activeBudget.amount, periodWindow, expenses],
+  );
+
+  const todayAllowance = useMemo(
+    () =>
+      showDailyAllowance && periodOffset === 0
+        ? getDailyAllowanceSummary(activeBudget.amount, periodWindow, expenses)
+        : null,
+    [
+      showDailyAllowance,
+      periodOffset,
+      activeBudget.amount,
+      periodWindow,
+      expenses,
+    ],
+  );
+
   const handleAddExpense = async (input: CreateExpenseInput) => {
     await addExpense(user.uid, { ...input, budgetId: activeBudget.id });
     // If the user logged an expense while viewing a past period, jump back to current period if the expense is for now
@@ -280,6 +310,7 @@ export function App() {
             currency={activeBudget.currency}
             period={periodWindow}
             periodOffset={periodOffset}
+            todayAllowance={todayAllowance}
             onPrevPeriod={() => setPeriodOffset((prev) => prev - 1)}
             onNextPeriod={() =>
               setPeriodOffset((prev) => Math.min(0, prev + 1))
@@ -298,6 +329,7 @@ export function App() {
           <ExpenseList
             expenses={expenses}
             currency={activeBudget.currency}
+            dailyAllowances={dailyAllowances}
             onBatchUpdateExpenses={handleBatchUpdateExpenses}
             onDeleteExpense={handleDeleteExpense}
           />

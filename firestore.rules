@@ -23,6 +23,7 @@ rules_version = '2';
 //   - cadence: string (required, enum: 'daily' | 'weekly' | 'monthly') - Reset cycle cadence
 //   - periodStartDay: int (required, 0 <= periodStartDay <= 31) - Cycle cutoff hour/day/date
 //   - currency: string (required, size == 3) - 3-letter ISO currency code
+//   - dailyTracking: bool (optional) - Show a rolling daily allowance (weekly/monthly only)
 //   - sortOrder: int (required, >= 0) - Position in the budget switcher
 //   - createdAt: number | timestamp (required, immutable on update) - Record creation time
 //   - updatedAt: number | timestamp (optional) - Last modification timestamp
@@ -110,7 +111,7 @@ service cloud.firestore {
     }
 
     function isValidBudget(data) {
-      return hasOnlyAllowedFields(['name', 'amount', 'cadence', 'periodStartDay', 'currency', 'sortOrder', 'createdAt', 'updatedAt']) &&
+      return hasOnlyAllowedFields(['name', 'amount', 'cadence', 'periodStartDay', 'currency', 'dailyTracking', 'sortOrder', 'createdAt', 'updatedAt']) &&
              hasRequiredFields(['name', 'amount', 'cadence', 'periodStartDay', 'currency', 'sortOrder', 'createdAt']) &&
              validStringLength('name', 1, 40) &&
              isValidNumberInRange(data.amount, 0, 100000000) &&
@@ -120,6 +121,7 @@ service cloud.firestore {
              data.periodStartDay >= 0 &&
              data.periodStartDay <= 31 &&
              validStringLength('currency', 3, 3) &&
+             (!('dailyTracking' in data) || data.dailyTracking is bool) &&
              data.sortOrder is int &&
              data.sortOrder >= 0 &&
              isValidTimeValue(data.createdAt) &&

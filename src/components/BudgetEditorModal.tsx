@@ -11,6 +11,7 @@ import {
   Plus,
   SlidersHorizontal,
   Calendar,
+  CalendarDays,
   Clock,
   DollarSign,
   Check,
@@ -24,7 +25,13 @@ import {
   DEFAULT_USER_SETTINGS,
   SUPPORTED_CURRENCIES,
 } from '../types/expense';
-import { formatHourLabel, getOrdinalSuffix } from '../utils/periodCalculator';
+import {
+  calculatePeriodWindow,
+  formatCurrency,
+  formatHourLabel,
+  getCycleDayCount,
+  getOrdinalSuffix,
+} from '../utils/periodCalculator';
 import {
   SPRING_MOMENTUM,
   applyRubberbandBounds,
@@ -91,6 +98,7 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
   const [currency, setCurrency] = useState<string>(
     DEFAULT_USER_SETTINGS.currency,
   );
+  const [dailyTracking, setDailyTracking] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
@@ -155,6 +163,9 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
       mode === 'edit' && budget
         ? budget.currency
         : DEFAULT_USER_SETTINGS.currency,
+    );
+    setDailyTracking(
+      mode === 'edit' && budget ? budget.dailyTracking === true : false,
     );
     setIsSaving(false);
     setIsConfirmingDelete(false);
@@ -293,6 +304,7 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
         cadence,
         periodStartDay,
         currency,
+        dailyTracking,
       });
       onClose();
     } catch {
@@ -331,6 +343,19 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
       : 'Save Changes';
 
   const HeaderIcon = mode === 'create' ? Plus : SlidersHorizontal;
+
+  const parsedDailyAmount = parseFloat(amountStr);
+  const dailyTrackingAmount =
+    Number.isFinite(parsedDailyAmount) && parsedDailyAmount >= 0
+      ? parsedDailyAmount
+      : 0;
+  const dailyTrackingPerDay = formatCurrency(
+    dailyTrackingAmount /
+      getCycleDayCount(
+        calculatePeriodWindow({ cadence, periodStartDay }, new Date()),
+      ),
+    currency,
+  );
 
   const deleteDescription = expenseCountFailed
     ? "This also deletes all of its expenses. This can't be undone."
@@ -669,7 +694,63 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
               </div>
               </motion.div>
 
-              {/* 5. Currency Selector */}
+              {/* 5. Daily Allowance Tracking (weekly/monthly only) */}
+              <AnimatePresence initial={false}>
+                {cadence !== 'daily' && (
+                  <motion.div
+                    key="daily-tracking"
+                    initial={{ opacity: 0, y: prefersReducedMotion ? 0 : -6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{
+                      opacity: 0,
+                      y: prefersReducedMotion ? 0 : -6,
+                      transition: { duration: 0.1, ease: 'easeIn' },
+                    }}
+                    transition={springTransition}
+                  >
+                    <span className={`${LABEL_CLASS} flex items-center gap-1.5`}>
+                      <CalendarDays className="w-3.5 h-3.5" />
+                      <span>Tracking</span>
+                    </span>
+                    <div className="flex items-center justify-between gap-3 py-0.5">
+                      <label
+                        htmlFor="budget-editor-daily-tracking"
+                        className="text-[15px] font-medium text-neutral-800 dark:text-neutral-100"
+                      >
+                        Daily allowance
+                      </label>
+                      <button
+                        id="budget-editor-daily-tracking"
+                        type="button"
+                        role="switch"
+                        aria-checked={dailyTracking}
+                        aria-label="Daily allowance"
+                        onClick={() => setDailyTracking((prev) => !prev)}
+                        className={`pressable relative w-[51px] h-[31px] shrink-0 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#007AFF]/40 ${
+                          dailyTracking
+                            ? 'bg-[#34C759] dark:bg-[#30D158]'
+                            : 'bg-black/[0.12] dark:bg-white/[0.16]'
+                        }`}
+                      >
+                        <motion.span
+                          aria-hidden="true"
+                          initial={false}
+                          animate={{ x: dailyTracking ? 20 : 0 }}
+                          transition={springTransition}
+                          className="absolute top-[2px] left-[2px] w-[27px] h-[27px] rounded-full bg-white shadow-sm"
+                        />
+                      </button>
+                    </div>
+                    <p className="mt-1 text-[13px] text-neutral-500 dark:text-neutral-400">
+                      {dailyTracking
+                        ? `Starts at ≈ ${dailyTrackingPerDay}/day, adjusts as you spend.`
+                        : "Splits what's left of the budget across the remaining days in the cycle."}
+                    </p>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {/* 6. Currency Selector */}
               <div>
                 <span className={`${LABEL_CLASS} flex items-center gap-1.5`}>
                   <DollarSign className="w-3.5 h-3.5" />

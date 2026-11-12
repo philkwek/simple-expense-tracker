@@ -31,6 +31,12 @@ export interface BudgetInput {
   /** Same meaning as `UserSettings.periodStartDay` */
   periodStartDay: number;
   currency: string;
+  /**
+   * Weekly/monthly only: show a rolling daily allowance,
+   * (amount − spent before the day) ÷ days left in the cycle including that day.
+   * Absent/false on budgets created before the feature. Ignored for daily cadence.
+   */
+  dailyTracking?: boolean;
 }
 
 export interface Budget extends BudgetInput {
