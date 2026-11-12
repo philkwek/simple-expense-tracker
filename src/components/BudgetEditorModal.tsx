@@ -16,6 +16,7 @@ import {
   DollarSign,
   Check,
   Trash2,
+  Bell,
 } from 'lucide-react';
 import {
   Budget,
@@ -23,6 +24,7 @@ import {
   BudgetInput,
   BUDGET_NAME_MAX_LENGTH,
   DEFAULT_USER_SETTINGS,
+  REMINDER_MAX_TIMES,
   SUPPORTED_CURRENCIES,
 } from '../types/expense';
 import {
@@ -33,6 +35,17 @@ import {
   getOrdinalSuffix,
 } from '../utils/periodCalculator';
 import {
+  REMINDER_TIME_OPTIONS,
+  formatReminderTime,
+  normalizeReminderTimes,
+} from '../utils/reminders';
+import {
+  ReminderSupport,
+  enablePushNotifications,
+  getNotificationPermission,
+  getReminderSupport,
+} from '../services/notificationService';
+import {
   SPRING_MOMENTUM,
   applyRubberbandBounds,
   getSpringTransition,
@@ -41,6 +54,8 @@ import {
 export interface BudgetEditorModalProps {
   isOpen: boolean;
   onClose: () => void;
+  /** Firebase uid of the signed-in user (or 'local-guest') */
+  userId: string;
   /** 'create' starts from defaults; 'edit' loads `budget` */
   mode: 'create' | 'edit';
   /** The budget being edited; null in create mode */
@@ -68,6 +83,9 @@ const WEEKDAYS = [
 const CADENCE_OPTIONS: readonly BudgetCadence[] = ['daily', 'weekly', 'monthly'];
 const DAILY_HOURS =[0, 3, 4, 6, 9, 12, 18, 21];
 const MONTHLY_COMMON_DAYS = [1, 5, 10, 15, 20, 25, 28, 30, 31];
+const DEFAULT_REMINDER_TIME = '20:00';
+/** Preferred times when the user taps "Add reminder", in the order they're offered. */
+const PREFERRED_REMINDER_TIMES = ['13:00', '18:00', '09:00', '21:00', '12:00'];
 
 const LABEL_CLASS =
   'block text-[12px] font-semibold uppercase tracking-[0.06em] text-neutral-400 dark:text-neutral-500 mb-2';
@@ -75,6 +93,7 @@ const LABEL_CLASS =
 export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
   isOpen,
   onClose,
+  userId,
   mode,
   budget,
   canDelete,
@@ -100,6 +119,27 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
   );
   const [dailyTracking, setDailyTracking] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+
+  const [remindersEnabled, setRemindersEnabled] = useState(false);
+  const [reminderTimes, setReminderTimes] = useState<string[]>([
+    DEFAULT_REMINDER_TIME,
+  ]);
+  const [reminderSupport, setReminderSupport] = useState<ReminderSupport | null>(
+    null,
+  );
+  const [reminderNotice, setReminderNotice] = useState<string | null>(null);
+  const [isEnablingReminders, setIsEnablingReminders] = useState(false);
+  // Invalidates in-flight permission work when the sheet closes or the user changes.
+  const reminderSessionRef = useRef(0);
+
+  // Turning reminders off must always work, even on a device that can't turn them on
+  // (e.g. reminders were enabled from the installed app, now edited in a browser tab).
+  const reminderSwitchDisabled =
+    isEnablingReminders ||
+    (!remindersEnabled &&
+      (reminderSupport === 'needs-install' ||
+        reminderSupport === 'unsupported' ||
+        reminderSupport === 'unavailable'));
 
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
   const [expenseCount, setExpenseCount] = useState<number | null>(null);
@@ -167,12 +207,54 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
     setDailyTracking(
       mode === 'edit' && budget ? budget.dailyTracking === true : false,
     );
+    const initialReminders =
+      mode === 'edit' && budget ? budget.reminders : undefined;
+    const initialReminderTimes = initialReminders
+      ? normalizeReminderTimes(initialReminders.times)
+      : [];
+    setRemindersEnabled(initialReminders ? initialReminders.enabled : false);
+    setReminderTimes(
+      initialReminderTimes.length > 0
+        ? initialReminderTimes
+        : [DEFAULT_REMINDER_TIME],
+    );
+    setReminderNotice(null);
+    setIsEnablingReminders(false);
     setIsSaving(false);
     setIsConfirmingDelete(false);
     setIsDeleting(false);
     setExpenseCount(null);
     setExpenseCountFailed(false);
   }, [isOpen, mode, budget, sheetY]);
+
+  // Bump the reminder session on every open/close so stale permission results are dropped.
+  useEffect(() => {
+    reminderSessionRef.current += 1;
+  }, [isOpen, userId]);
+
+  // Ask what this device supports whenever the sheet opens.
+  useEffect(() => {
+    if (!isOpen || !userId) return;
+    const session = reminderSessionRef.current;
+    let cancelled = false;
+    setReminderSupport(null);
+
+    getReminderSupport(userId)
+      .then((support) => {
+        if (!cancelled && reminderSessionRef.current === session) {
+          setReminderSupport(support);
+        }
+      })
+      .catch(() => {
+        if (!cancelled && reminderSessionRef.current === session) {
+          setReminderSupport('unsupported');
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, userId]);
 
   // Count the expenses that would be deleted while the confirmation is open.
   useEffect(() => {
@@ -282,6 +364,79 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
   const trimmedName = name.trim();
   const canSubmit = trimmedName.length > 0 && !isSaving;
 
+  const handleToggleReminders = () => {
+    if (remindersEnabled) {
+      setRemindersEnabled(false);
+      setReminderNotice(null);
+      return;
+    }
+    if (reminderSwitchDisabled) return;
+
+    // Everything up to requestPermission() must run synchronously: iOS only
+    // shows the prompt while the tap is still being handled.
+    setRemindersEnabled(true);
+    setReminderNotice(null);
+    setIsEnablingReminders(true);
+    const session = reminderSessionRef.current;
+
+    void enablePushNotifications(userId)
+      .then((result) => {
+        if (reminderSessionRef.current !== session) return;
+        if (result === 'granted') {
+          setRemindersEnabled(true);
+          setReminderNotice(null);
+        } else if (result === 'denied') {
+          setRemindersEnabled(false);
+          setReminderNotice(
+            'Notifications are blocked for Ledger. Allow them in your device settings.',
+          );
+        } else if (result === 'unsupported') {
+          setRemindersEnabled(false);
+          setReminderNotice("This browser can't show reminders.");
+        } else {
+          setRemindersEnabled(false);
+          setReminderNotice("Couldn't turn on reminders. Try again.");
+        }
+      })
+      .catch(() => {
+        if (reminderSessionRef.current !== session) return;
+        setRemindersEnabled(false);
+        setReminderNotice("Couldn't turn on reminders. Try again.");
+      })
+      .finally(() => {
+        if (reminderSessionRef.current === session) {
+          setIsEnablingReminders(false);
+        }
+      });
+  };
+
+  const handleReminderTimeChange = (index: number, time: string) => {
+    setReminderTimes((prev) =>
+      normalizeReminderTimes(
+        prev.map((value, i) => (i === index ? time : value)),
+      ),
+    );
+  };
+
+  const handleRemoveReminder = (index: number) => {
+    setReminderTimes((prev) => {
+      if (prev.length <= 1) return prev;
+      return normalizeReminderTimes(prev.filter((_, i) => i !== index));
+    });
+  };
+
+  const handleAddReminder = () => {
+    setReminderTimes((prev) => {
+      if (prev.length >= REMINDER_MAX_TIMES) return prev;
+      const used = new Set(prev);
+      const nextTime =
+        PREFERRED_REMINDER_TIMES.find((t) => !used.has(t)) ??
+        REMINDER_TIME_OPTIONS.find((t) => !used.has(t));
+      if (!nextTime) return prev;
+      return normalizeReminderTimes([...prev, nextTime]);
+    });
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isSaving) return;
@@ -296,6 +451,18 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
         ? Math.round(parsedAmount * 100) / 100
         : fallbackAmount;
 
+    const hadReminders =
+      mode === 'edit' && budget ? budget.reminders !== undefined : false;
+    const reminders: BudgetInput['reminders'] =
+      remindersEnabled || hadReminders
+        ? {
+            enabled: remindersEnabled,
+            times: reminderTimes,
+            timeZone:
+              Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+          }
+        : undefined;
+
     setIsSaving(true);
     try {
       await onSave({
@@ -305,6 +472,7 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
         periodStartDay,
         currency,
         dailyTracking,
+        ...(reminders ? { reminders } : {}),
       });
       onClose();
     } catch {
@@ -368,6 +536,33 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
           : `This also deletes its ${expenseCount} expenses. This can't be undone.`;
 
   const confirmOffsetY = prefersReducedMotion ? 0 : 6;
+
+  const reminderSupportNotice = (() => {
+    if (reminderSupport === 'needs-install') {
+      return 'Add Ledger to your Home Screen to get reminders on iPhone.';
+    }
+    if (reminderSupport === 'unsupported') {
+      return "This browser can't show reminders.";
+    }
+    if (reminderSupport === 'unavailable') {
+      return userId === 'local-guest'
+        ? 'Sign in to get reminders.'
+        : "Reminders aren't available yet.";
+    }
+    if (getNotificationPermission() === 'denied') {
+      return 'Notifications are blocked for Ledger. Allow them in your device settings.';
+    }
+    return null;
+  })();
+
+  const reminderHelperText = reminderNotice ?? reminderSupportNotice;
+
+  const reminderAllowanceHelper =
+    dailyTracking && cadence !== 'daily'
+      ? "Each reminder includes what's left of today's allowance."
+      : cadence === 'daily'
+        ? "Each reminder includes what's left today."
+        : "Each reminder includes what's left this cycle.";
 
   return (
     <AnimatePresence>
@@ -750,7 +945,123 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
                 )}
               </AnimatePresence>
 
-              {/* 6. Currency Selector */}
+              {/* 6. Reminders (all cadences) */}
+              <div>
+                <span className={`${LABEL_CLASS} flex items-center gap-1.5`}>
+                  <Bell className="w-3.5 h-3.5" />
+                  <span>Reminders</span>
+                </span>
+                <div className="flex items-center justify-between gap-3 py-0.5">
+                  <label
+                    htmlFor="budget-editor-reminders"
+                    className="text-[15px] font-medium text-neutral-800 dark:text-neutral-100"
+                  >
+                    Remind me to log expenses
+                  </label>
+                  <button
+                    id="budget-editor-reminders"
+                    type="button"
+                    role="switch"
+                    aria-checked={remindersEnabled}
+                    aria-disabled={reminderSwitchDisabled}
+                    aria-label="Remind me to log expenses"
+                    disabled={reminderSwitchDisabled}
+                    onClick={handleToggleReminders}
+                    className={`pressable relative w-[51px] h-[31px] shrink-0 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#007AFF]/40 ${
+                      remindersEnabled
+                        ? 'bg-[#34C759] dark:bg-[#30D158]'
+                        : 'bg-black/[0.12] dark:bg-white/[0.16]'
+                    } ${reminderSwitchDisabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  >
+                    <motion.span
+                      aria-hidden="true"
+                      initial={false}
+                      animate={{ x: remindersEnabled ? 20 : 0 }}
+                      transition={springTransition}
+                      className="absolute top-[2px] left-[2px] w-[27px] h-[27px] rounded-full bg-white shadow-sm"
+                    />
+                  </button>
+                </div>
+
+                {reminderHelperText && (
+                  <p
+                    role={reminderNotice ? 'alert' : undefined}
+                    className="mt-1 text-[13px] text-neutral-500 dark:text-neutral-400"
+                  >
+                    {reminderHelperText}
+                  </p>
+                )}
+
+                <AnimatePresence initial={false}>
+                  {remindersEnabled && (
+                    <motion.div
+                      key="reminder-times"
+                      initial={{ opacity: 0, y: prefersReducedMotion ? 0 : -6 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{
+                        opacity: 0,
+                        y: prefersReducedMotion ? 0 : -6,
+                        transition: { duration: 0.1, ease: 'easeIn' },
+                      }}
+                      transition={springTransition}
+                      className="mt-2 space-y-2"
+                    >
+                      {reminderTimes.map((time, index) => (
+                        <div key={time} className="flex items-center gap-2">
+                          <select
+                            aria-label={`Reminder ${index + 1}`}
+                            value={time}
+                            onChange={(e) =>
+                              handleReminderTimeChange(index, e.target.value)
+                            }
+                            className="flex-1 min-w-0 h-11 px-3.5 rounded-xl bg-black/[0.04] dark:bg-white/[0.06] text-[15px] text-neutral-800 dark:text-neutral-100 focus:outline-none focus:ring-2 focus:ring-[#007AFF]/40"
+                          >
+                            {REMINDER_TIME_OPTIONS.map((option) => (
+                              <option
+                                key={option}
+                                value={option}
+                                disabled={
+                                  option !== time &&
+                                  reminderTimes.includes(option)
+                                }
+                              >
+                                {formatReminderTime(option)}
+                              </option>
+                            ))}
+                          </select>
+                          {reminderTimes.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveReminder(index)}
+                              aria-label={`Remove reminder at ${formatReminderTime(time)}`}
+                              className="pressable touch-target w-9 h-9 shrink-0 rounded-full bg-black/[0.05] dark:bg-white/[0.08] text-neutral-500 dark:text-neutral-300 flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#007AFF]/40"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+
+                      {reminderTimes.length < REMINDER_MAX_TIMES && (
+                        <button
+                          type="button"
+                          onClick={handleAddReminder}
+                          className="pressable touch-target h-10 px-3 inline-flex items-center justify-center gap-1.5 rounded-xl bg-white dark:bg-neutral-800 border border-black/[0.055] dark:border-white/[0.08] text-[#007AFF] dark:text-[#0A84FF] text-[14px] font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#007AFF]/40"
+                        >
+                          <Plus className="w-4 h-4" />
+                          <span>Add reminder</span>
+                        </button>
+                      )}
+
+                      <p className="mt-1 text-[13px] text-neutral-500 dark:text-neutral-400">
+                        {reminderAllowanceHelper}
+                      </p>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+
+              {/* 7. Currency Selector */}
               <div>
                 <span className={`${LABEL_CLASS} flex items-center gap-1.5`}>
                   <DollarSign className="w-3.5 h-3.5" />

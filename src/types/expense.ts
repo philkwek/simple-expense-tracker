@@ -37,13 +37,39 @@ export interface BudgetInput {
    * Absent/false on budgets created before the feature. Ignored for daily cadence.
    */
   dailyTracking?: boolean;
+  /** Push reminders to log expenses. Absent on budgets created before the feature. */
+  reminders?: BudgetReminders;
 }
+
+export interface BudgetReminders {
+  enabled: boolean;
+  /** Local wall-clock times "HH:mm" on 15-minute steps, sorted, unique, 1..REMINDER_MAX_TIMES */
+  times: string[];
+  /** IANA time zone the times are in, e.g. "Asia/Singapore" (taken from the device on save) */
+  timeZone: string;
+}
+
+export const REMINDER_MAX_TIMES = 4;
+export const REMINDER_STEP_MINUTES = 15;
 
 export interface Budget extends BudgetInput {
   id: string;
   sortOrder: number;
   createdAt: number;
   updatedAt?: number;
+  /**
+   * Epoch ms of the next reminder to send (UTC instant). Present only while reminders
+   * are enabled; recomputed by the client on save and advanced by the sender function.
+   */
+  nextReminderAt?: number;
+}
+
+/**
+ * Push tokens for one user, stored at `users/{uid}/private/push`.
+ * Keyed by a short hash of the token so re-registering the same device is idempotent.
+ */
+export interface PushTokensDoc {
+  tokens: Record<string, { token: string; updatedAt: number }>;
 }
 
 /** ID given to the budget created from a user's pre-multi-budget settings. */

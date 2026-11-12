@@ -24,9 +24,21 @@ rules_version = '2';
 //   - periodStartDay: int (required, 0 <= periodStartDay <= 31) - Cycle cutoff hour/day/date
 //   - currency: string (required, size == 3) - 3-letter ISO currency code
 //   - dailyTracking: bool (optional) - Show a rolling daily allowance (weekly/monthly only)
+//   - reminders: map (optional) - Push reminder settings:
+//       - enabled: bool - Whether reminders are currently sent
+//       - times: list (<= 4 entries) - Local wall-clock "HH:mm" times, sorted and unique
+//       - timeZone: string (1 <= size <= 64) - IANA time zone the times are in
+//   - nextReminderAt: number (optional, >= 0) - Epoch ms of the next reminder to send;
+//                     recomputed by the client on save and advanced by the sender function
 //   - sortOrder: int (required, >= 0) - Position in the budget switcher
 //   - createdAt: number | timestamp (required, immutable on update) - Record creation time
 //   - updatedAt: number | timestamp (optional) - Last modification timestamp
+//
+// Collection: users/{userId}/private/{docId}
+// Document ID: 'push' (the only document allowed in this subcollection)
+// Fields:
+//   - tokens: map (required, <= 10 entries) - Push tokens keyed by a short hash of the
+//             token, each value holding { token: string, updatedAt: number }
 //
 // Collection: users/{userId}/expenses/{expenseId}
 // Document ID: Auto-generated or restored document ID (<= 128 chars)
@@ -111,7 +123,7 @@ service cloud.firestore {
     }
 
     function isValidBudget(data) {
-      return hasOnlyAllowedFields(['name', 'amount', 'cadence', 'periodStartDay', 'currency', 'dailyTracking', 'sortOrder', 'createdAt', 'updatedAt']) &&
+      return hasOnlyAllowedFields(['name', 'amount', 'cadence', 'periodStartDay', 'currency', 'dailyTracking', 'reminders', 'nextReminderAt', 'sortOrder', 'createdAt', 'updatedAt']) &&
              hasRequiredFields(['name', 'amount', 'cadence', 'periodStartDay', 'currency', 'sortOrder', 'createdAt']) &&
              validStringLength('name', 1, 40) &&
              isValidNumberInRange(data.amount, 0, 100000000) &&
@@ -122,10 +134,25 @@ service cloud.firestore {
              data.periodStartDay <= 31 &&
              validStringLength('currency', 3, 3) &&
              (!('dailyTracking' in data) || data.dailyTracking is bool) &&
+             (!('reminders' in data) || isValidReminders(data.reminders)) &&
+             (!('nextReminderAt' in data) || ((data.nextReminderAt is int || data.nextReminderAt is float) && data.nextReminderAt >= 0)) &&
              data.sortOrder is int &&
              data.sortOrder >= 0 &&
              isValidTimeValue(data.createdAt) &&
              (!('updatedAt' in data) || isValidTimeValue(data.updatedAt));
+    }
+
+    // Push reminder settings attached to a budget
+    function isValidReminders(r) {
+      return r is map &&
+             r.keys().hasOnly(['enabled', 'times', 'timeZone']) &&
+             r.keys().hasAll(['enabled', 'times', 'timeZone']) &&
+             r.enabled is bool &&
+             r.times is list &&
+             r.times.size() <= 4 &&
+             r.timeZone is string &&
+             r.timeZone.size() >= 1 &&
+             r.timeZone.size() <= 64;
     }
 
     // budgetId may be added to a legacy expense, but never moved between budgets
@@ -186,6 +213,16 @@ service cloud.firestore {
                          areImmutableFieldsUnchanged(['createdAt']) &&
                          isBudgetIdUnchanged();
         allow delete: if isOwner(userId);
+      }
+
+      // Private push-token document, written by the web client.
+      match /private/{docId} {
+        allow read, delete: if isOwner(userId) && docId == 'push';
+        allow create, update: if isOwner(userId) &&
+                                 docId == 'push' &&
+                                 request.resource.data.keys().hasOnly(['tokens']) &&
+                                 request.resource.data.tokens is map &&
+                                 request.resource.data.tokens.size() <= 10;
       }
     }
 

@@ -20,6 +20,7 @@ import {
 import { auth, db, isFirebaseConfigured } from '../lib/firebase';
 import {
   BudgetCadence,
+  BudgetReminders,
   DEFAULT_BUDGET_ID,
   DEFAULT_USER_SETTINGS,
   UserProfile,
@@ -27,6 +28,11 @@ import {
 import { ensureAccountBudgetsMigrated } from './expenseService';
 import { planGuestBudgetMerge } from './budgetMerge';
 import type { BudgetDocLike } from './budgetMerge';
+import {
+  computeNextReminderAt,
+  isValidTimeZone,
+  normalizeReminderTimes,
+} from '../utils/reminders';
 
 const LOCAL_AUTH_STORAGE_KEY = 'ledger_local_user_v1';
 
@@ -136,11 +142,29 @@ function synthesizeGuestBudget(
 }
 
 /**
+ * Normalizes a persisted reminders map from a guest budget document, mirroring
+ * `normalizeBudgetInput` in expenseService. Returns undefined when the budget never
+ * had reminder settings, so the field is omitted rather than written as a default.
+ */
+function normalizeBudgetReminders(value: unknown): BudgetReminders | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const data = value as Record<string, unknown>;
+  const times = normalizeReminderTimes(data.times);
+  return {
+    enabled: data.enabled === true && times.length > 0,
+    times,
+    timeZone: isValidTimeZone(data.timeZone) ? data.timeZone : 'UTC',
+  };
+}
+
+/**
  * Extracts only the fields allowed by the Firestore budget security rules.
  * Guest docs must never carry extra fields into the permanent user's account.
  */
 function budgetDocFields(budget: BudgetDocLike, now: number) {
   const createdAt = normalizeTime(budget.createdAt, now);
+  const reminders = normalizeBudgetReminders(budget.reminders);
+  const nextReminderAt = computeNextReminderAt(reminders, now);
   return {
     name: budget.name,
     amount:
@@ -157,6 +181,8 @@ function budgetDocFields(budget: BudgetDocLike, now: number) {
     sortOrder: typeof budget.sortOrder === 'number' ? budget.sortOrder : 0,
     createdAt,
     updatedAt: normalizeTime(budget.updatedAt, createdAt),
+    ...(reminders ? { reminders } : {}),
+    ...(nextReminderAt !== null ? { nextReminderAt } : {}),
   };
 }
 

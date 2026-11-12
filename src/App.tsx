@@ -30,6 +30,7 @@ import {
   subscribeToPeriodExpenses,
   updateBudget,
 } from './services/expenseService';
+import { refreshPushTokenIfGranted } from './services/notificationService';
 import { BudgetCard } from './components/BudgetCard';
 import {
   CreateExpenseInput,
@@ -108,6 +109,12 @@ export function App() {
     setActiveBudgetId(getStoredActiveBudgetId(user.uid));
     const unsubscribe = subscribeToBudgets(user.uid, setBudgets, setSyncState);
     return unsubscribe;
+  }, [user.uid]);
+
+  // Keep the saved push token fresh when this device already allows notifications.
+  useEffect(() => {
+    if (user.uid === 'local-guest') return;
+    void refreshPushTokenIfGranted(user.uid);
   }, [user.uid]);
 
   // Falls back to the first budget when the remembered one no longer exists
@@ -231,6 +238,27 @@ export function App() {
     setPeriodOffset(0);
   };
 
+  // Deep link from a reminder notification ("/?budget=<id>"), once per page load.
+  const deepLinkHandledRef = useRef(false);
+  useEffect(() => {
+    if (deepLinkHandledRef.current || budgets.length === 0) return;
+    deepLinkHandledRef.current = true;
+
+    const params = new URLSearchParams(window.location.search);
+    const budgetId = params.get('budget');
+    if (!budgetId) return;
+
+    if (budgets.some((b) => b.id === budgetId)) {
+      handleSelectBudget(budgetId);
+      setPeriodOffset(0);
+    }
+    window.history.replaceState(
+      null,
+      '',
+      window.location.pathname + window.location.hash,
+    );
+  }, [budgets, handleSelectBudget]);
+
   const handleSaveBudget = async (input: BudgetInput) => {
     if (editorMode === 'create') {
       const created = await createBudget(user.uid, input);
@@ -350,6 +378,7 @@ export function App() {
           <BudgetEditorModal
             isOpen={editorMode !== null}
             onClose={() => setEditorMode(null)}
+            userId={user.uid}
             mode={editorMode ?? 'edit'}
             budget={editorMode === 'edit' ? activeBudget : null}
             canDelete={budgets.length > 1}

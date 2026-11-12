@@ -20,6 +20,7 @@ import {
   Budget,
   BUDGET_NAME_MAX_LENGTH,
   BudgetInput,
+  BudgetReminders,
   DEFAULT_BUDGET_ID,
   DEFAULT_USER_SETTINGS,
   ExpenseItem,
@@ -27,6 +28,11 @@ import {
   SyncState,
   UserSettings,
 } from '../types/expense';
+import {
+  computeNextReminderAt,
+  isValidTimeZone,
+  normalizeReminderTimes,
+} from '../utils/reminders';
 
 const LOCAL_SETTINGS_PREFIX = 'ledger_settings_v1_';
 const LOCAL_EXPENSES_PREFIX = 'ledger_expenses_v1_';
@@ -89,7 +95,7 @@ function clampPeriodStartDay(cadence: Budget['cadence'], day: number): number {
 
 export function normalizeBudgetInput(input: BudgetInput): BudgetInput {
   const cadence = isCadence(input.cadence) ? input.cadence : 'monthly';
-  return {
+  const normalized: BudgetInput = {
     name: input.name.trim().slice(0, BUDGET_NAME_MAX_LENGTH) || 'Budget',
     amount:
       Number.isFinite(input.amount) && input.amount >= 0
@@ -103,6 +109,20 @@ export function normalizeBudgetInput(input: BudgetInput): BudgetInput {
         : DEFAULT_USER_SETTINGS.currency,
     dailyTracking: input.dailyTracking === true && cadence !== 'daily',
   };
+
+  if (input.reminders) {
+    const times = normalizeReminderTimes(input.reminders.times);
+    normalized.reminders = {
+      // A reminder without any valid time can never fire, so it stays disabled.
+      enabled: input.reminders.enabled === true && times.length > 0,
+      times,
+      timeZone: isValidTimeZone(input.reminders.timeZone)
+        ? input.reminders.timeZone
+        : 'UTC',
+    };
+  }
+
+  return normalized;
 }
 
 function parseLegacySettings(data: Record<string, unknown> | undefined): UserSettings {
@@ -122,7 +142,20 @@ function parseLegacySettings(data: Record<string, unknown> | undefined): UserSet
   };
 }
 
+function parseReminders(value: unknown): BudgetReminders | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const data = value as Record<string, unknown>;
+  return {
+    enabled: data.enabled === true,
+    times: Array.isArray(data.times)
+      ? data.times.filter((time): time is string => typeof time === 'string')
+      : [],
+    timeZone: typeof data.timeZone === 'string' ? data.timeZone : '',
+  };
+}
+
 function parseBudget(id: string, data: Record<string, unknown>): Budget {
+  const reminders = parseReminders(data.reminders);
   const base = normalizeBudgetInput({
     name: typeof data.name === 'string' ? data.name : 'Budget',
     amount: typeof data.amount === 'number' ? data.amount : 0,
@@ -131,14 +164,22 @@ function parseBudget(id: string, data: Record<string, unknown>): Budget {
       typeof data.periodStartDay === 'number' ? data.periodStartDay : 1,
     currency: typeof data.currency === 'string' ? data.currency : 'USD',
     dailyTracking: data.dailyTracking === true,
+    ...(reminders ? { reminders } : {}),
   });
-  return {
+  const budget: Budget = {
     ...base,
     id,
     sortOrder: typeof data.sortOrder === 'number' ? data.sortOrder : 0,
     createdAt: normalizeTimestamp(data.createdAt),
     updatedAt: normalizeTimestamp(data.updatedAt),
   };
+  if (
+    typeof data.nextReminderAt === 'number' &&
+    Number.isFinite(data.nextReminderAt)
+  ) {
+    budget.nextReminderAt = data.nextReminderAt;
+  }
+  return budget;
 }
 
 function parseExpense(id: string, data: Record<string, unknown>): ExpenseItem {
@@ -173,7 +214,28 @@ function budgetToDoc(budget: Budget) {
     sortOrder: budget.sortOrder,
     createdAt: budget.createdAt,
     updatedAt: budget.updatedAt ?? Date.now(),
+    // Budgets are written with setDoc (full overwrite): omitting these keys
+    // removes them, which is exactly how disabling reminders works.
+    ...(budget.reminders ? { reminders: budget.reminders } : {}),
+    ...(typeof budget.nextReminderAt === 'number' &&
+    Number.isFinite(budget.nextReminderAt)
+      ? { nextReminderAt: budget.nextReminderAt }
+      : {}),
   };
+}
+
+/**
+ * Stores the next reminder instant on a budget, recomputed from its reminders so a
+ * stale value is never carried over. Removes the field when reminders cannot fire.
+ */
+function setNextReminderAt(budget: Budget, now: number): Budget {
+  const nextReminderAt = computeNextReminderAt(budget.reminders, now);
+  if (nextReminderAt === null) {
+    delete budget.nextReminderAt;
+  } else {
+    budget.nextReminderAt = nextReminderAt;
+  }
+  return budget;
 }
 
 // ---------------------------------------------------------------
@@ -387,19 +449,25 @@ export async function createBudget(
   const clean = normalizeBudgetInput(input);
 
   if (isLocalMode(userId)) {
-    const budget: Budget = {
-      ...clean,
-      id: `local_b_${now}_${Math.random().toString(36).slice(2, 8)}`,
-      sortOrder,
-      createdAt: now,
-      updatedAt: now,
-    };
+    const budget: Budget = setNextReminderAt(
+      {
+        ...clean,
+        id: `local_b_${now}_${Math.random().toString(36).slice(2, 8)}`,
+        sortOrder,
+        createdAt: now,
+        updatedAt: now,
+      },
+      now,
+    );
     writeLocalBudgets(userId, [...existing, budget]);
     return budget;
   }
 
   const ref = doc(collection(db!, 'users', userId, 'budgets'));
-  const budget: Budget = { ...clean, id: ref.id, sortOrder, createdAt: now, updatedAt: now };
+  const budget: Budget = setNextReminderAt(
+    { ...clean, id: ref.id, sortOrder, createdAt: now, updatedAt: now },
+    now,
+  );
   await setDoc(ref, budgetToDoc(budget));
   return budget;
 }
@@ -409,7 +477,14 @@ export async function updateBudget(
   budget: Budget,
   input: BudgetInput,
 ): Promise<void> {
-  const next: Budget = { ...budget, ...normalizeBudgetInput(input), updatedAt: Date.now() };
+  const now = Date.now();
+  const merged = normalizeBudgetInput(input);
+  // `input` may omit reminders, in which case the budget's existing reminders
+  // stay in place; nextReminderAt is always recomputed from the merged result.
+  const next = setNextReminderAt(
+    { ...budget, ...merged, updatedAt: now },
+    now,
+  );
 
   if (isLocalMode(userId)) {
     writeLocalBudgets(
