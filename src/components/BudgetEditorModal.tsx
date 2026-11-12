@@ -58,7 +58,8 @@ const WEEKDAYS = [
   { value: 6, label: 'Saturday', short: 'Sat' },
 ];
 
-const DAILY_HOURS = [0, 3, 4, 6, 9, 12, 18, 21];
+const CADENCE_OPTIONS: readonly BudgetCadence[] = ['daily', 'weekly', 'monthly'];
+const DAILY_HOURS =[0, 3, 4, 6, 9, 12, 18, 21];
 const MONTHLY_COMMON_DAYS = [1, 5, 10, 15, 20, 25, 28, 30, 31];
 
 const LABEL_CLASS =
@@ -465,7 +466,20 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
               <div>
                 <span className={LABEL_CLASS}>Budget Cycle Cadence</span>
                 <div className="grid grid-cols-3 p-1 rounded-2xl bg-black/[0.05] dark:bg-white/[0.07] relative">
-                  {(['daily', 'weekly', 'monthly'] as const).map((option) => {
+                  {/*
+                    One sliding indicator instead of a shared `layoutId` pill: a layoutId
+                    element inside the sheet's AnimatePresence never reports its exit as
+                    complete after it has moved, which left the invisible full-screen
+                    dialog mounted and blocking every tap once the sheet was closed.
+                  */}
+                  <motion.div
+                    aria-hidden="true"
+                    initial={false}
+                    animate={{ x: `${CADENCE_OPTIONS.indexOf(cadence) * 100}%` }}
+                    transition={springTransition}
+                    className="absolute top-1 bottom-1 left-1 w-[calc((100%-0.5rem)/3)] rounded-xl bg-white dark:bg-neutral-800 shadow-sm"
+                  />
+                  {CADENCE_OPTIONS.map((option) => {
                     const isActive = cadence === option;
                     return (
                       <button
@@ -479,13 +493,6 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
                             : 'text-neutral-500 dark:text-neutral-400'
                         }`}
                       >
-                        {isActive && (
-                          <motion.div
-                            layoutId="budgetEditorCadencePill"
-                            transition={springTransition}
-                            className="absolute inset-0 rounded-xl bg-white dark:bg-neutral-800 shadow-sm -z-10"
-                          />
-                        )}
                         {option}
                       </button>
                     );

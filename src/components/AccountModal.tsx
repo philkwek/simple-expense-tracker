@@ -277,6 +277,18 @@ export const AccountModal: React.FC<AccountModalProps> = ({
 
                 {/* Segmented Mode Switcher: Create Account vs Sign In */}
                 <div className="grid grid-cols-2 p-1 rounded-2xl bg-black/[0.05] dark:bg-white/[0.07] relative">
+                  {/*
+                    A single sliding indicator, not a shared `layoutId` pill: a moved
+                    layoutId element never completes its exit inside AnimatePresence,
+                    which left the closed sheet mounted and blocking every tap.
+                  */}
+                  <motion.div
+                    aria-hidden="true"
+                    initial={false}
+                    animate={{ x: mode === 'signin' ? '100%' : '0%' }}
+                    transition={SPRING_CRITICALLY_DAMPED}
+                    className="absolute top-1 bottom-1 left-1 w-[calc((100%-0.5rem)/2)] rounded-xl bg-white dark:bg-neutral-800 shadow-sm"
+                  />
                   {(['signup', 'signin'] as const).map((tab) => {
                     const active = mode === tab;
                     return (
@@ -294,13 +306,6 @@ export const AccountModal: React.FC<AccountModalProps> = ({
                             : 'text-neutral-500 dark:text-neutral-400'
                         }`}
                       >
-                        {active && (
-                          <motion.div
-                            layoutId="accountAuthTab"
-                            transition={SPRING_CRITICALLY_DAMPED}
-                            className="absolute inset-0 rounded-xl bg-white dark:bg-neutral-800 shadow-sm -z-10"
-                          />
-                        )}
                         {tab === 'signup' ? 'Create Account' : 'Sign In'}
                       </button>
                     );
