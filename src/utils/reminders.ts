@@ -276,13 +276,13 @@ export function buildReminderMessage(input: {
   const isZero = absolute < 0.005;
   const effectiveRemaining = isZero ? 0 : remaining;
   const money = formatCurrency(isZero ? 0 : absolute, currency);
-  const title = budgetName;
+  const title = budgetName + " budget reminder";
 
   if (kind === 'today') {
     const body =
       effectiveRemaining >= 0
-        ? `${money} left today. Anything to log?`
-        : `${money} over today's budget. Anything to log?`;
+        ? `You have ${money} remaining in your budget today. Anything to log?`
+        : `You spent ${money} over today's budget. Anything to log?`;
     return { title, body };
   }
 

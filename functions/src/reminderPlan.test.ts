@@ -217,9 +217,9 @@ describe('buildMessageFromSums', () => {
     );
 
     const money = formatCurrency(7, 'SGD');
-    expect(message.title).toBe('Groceries');
-    expect(message.body).toBe(`${money} left today. Anything to log?`);
-    expect(message.body.startsWith(`${money} left today`)).toBe(true);
+    expect(message.title).toBe('Groceries budget reminder');
+    expect(message.body).toBe(`You have ${money} remaining in your budget today. Anything to log?`);
+    expect(message.body.startsWith(`You have ${money} remaining in your budget today`)).toBe(true);
   });
 
   it('builds the until-last-day message for a monthly budget without tracking', () => {
@@ -240,7 +240,7 @@ describe('buildMessageFromSums', () => {
       NOW,
     );
 
-    expect(message.title).toBe('Travel');
+    expect(message.title).toBe('Travel budget reminder');
     expect(message.body).toBe(
       `${formatCurrency(250, 'SGD')} left until Nov 30. Anything to log?`,
     );
@@ -267,7 +267,7 @@ describe('buildMessageFromSums', () => {
       NOW,
     );
     expect(message.body).toBe(
-      `${formatCurrency(38, 'SGD')} left today. Anything to log?`,
+      `You have ${formatCurrency(38, 'SGD')} remaining in your budget today. Anything to log?`,
     );
   });
 });

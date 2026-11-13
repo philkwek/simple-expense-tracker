@@ -196,8 +196,8 @@ describe('buildReminderMessage', () => {
         remaining: 12.5,
       }),
     ).toEqual({
-      title: 'Groceries',
-      body: `${money} left today. Anything to log?`,
+      title: 'Groceries budget reminder',
+      body: `You have ${money} remaining in your budget today. Anything to log?`,
     });
   });
 
@@ -211,8 +211,8 @@ describe('buildReminderMessage', () => {
         remaining: -3.25,
       }),
     ).toEqual({
-      title: 'Fun',
-      body: `${money} over today's budget. Anything to log?`,
+      title: 'Fun budget reminder',
+      body: `You spent ${money} over today's budget. Anything to log?`,
     });
   });
 
@@ -227,7 +227,7 @@ describe('buildReminderMessage', () => {
         cycleLastDayLabel: 'Nov 30',
       }),
     ).toEqual({
-      title: 'Travel',
+      title: 'Travel budget reminder',
       body: `${money} left until Nov 30. Anything to log?`,
     });
   });
@@ -242,7 +242,7 @@ describe('buildReminderMessage', () => {
         remaining: 40,
       }),
     ).toEqual({
-      title: 'Travel',
+      title: 'Travel budget reminder',
       body: `${money} left this cycle. Anything to log?`,
     });
   });
@@ -258,7 +258,7 @@ describe('buildReminderMessage', () => {
         cycleLastDayLabel: 'Nov 30',
       }),
     ).toEqual({
-      title: 'Travel',
+      title: 'Travel budget reminder',
       body: `${money} over budget this cycle. Anything to log?`,
     });
   });
@@ -272,7 +272,7 @@ describe('buildReminderMessage', () => {
         kind: 'today',
         remaining: 0.001,
       }).body,
-    ).toBe(`${money} left today. Anything to log?`);
+    ).toBe(`You have ${money} remaining in your budget today. Anything to log?`);
     expect(
       buildReminderMessage({
         budgetName: 'Tiny',
@@ -280,7 +280,7 @@ describe('buildReminderMessage', () => {
         kind: 'today',
         remaining: -0.001,
       }).body,
-    ).toBe(`${money} left today. Anything to log?`);
+    ).toBe(`You have ${money} remaining in your budget today. Anything to log?`);
   });
 });
 
