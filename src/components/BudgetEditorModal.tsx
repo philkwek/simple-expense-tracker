@@ -708,7 +708,7 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
                     initial={false}
                     animate={{ x: `${CADENCE_OPTIONS.indexOf(cadence) * 100}%` }}
                     transition={springTransition}
-                    className="absolute top-1 bottom-1 left-1 w-[calc((100%-0.5rem)/3)] rounded-xl bg-white dark:bg-neutral-800 shadow-sm"
+                    className="absolute top-1 bottom-1 left-1 w-[calc((100%-0.5rem)/3)] rounded-xl bg-white dark:bg-neutral-600 shadow-sm dark:shadow-none dark:ring-1 dark:ring-white/10"
                   />
                   {CADENCE_OPTIONS.map((option) => {
                     const isActive = cadence === option;
