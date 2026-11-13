@@ -39,6 +39,7 @@ import {
 import { ExpenseList } from './components/ExpenseList';
 import { UndoToast } from './components/UndoToast';
 import { BudgetSwitcher } from './components/BudgetSwitcher';
+import { LoadingScreen } from './components/LoadingScreen';
 
 /** Shown for the brief moment before the first budgets snapshot arrives. */
 const PLACEHOLDER_BUDGET: Budget = legacySettingsToBudget(DEFAULT_USER_SETTINGS, 0);
@@ -73,6 +74,12 @@ export function App() {
   const [periodOffset, setPeriodOffset] = useState<number>(0);
   const [syncState, setSyncState] = useState<SyncState>('local');
 
+  // Splash gating: the real user, their budgets, and the active budget's expenses must all
+  // have arrived before the dashboard is revealed, so the default placeholder never shows.
+  const [authResolved, setAuthResolved] = useState(false);
+  const [loadedExpensesKey, setLoadedExpensesKey] = useState<string | null>(null);
+  const [hasLoaded, setHasLoaded] = useState(false);
+
   const [editorMode, setEditorMode] = useState<'create' | 'edit' | null>(null);
   const [isAccountOpen, setIsAccountOpen] = useState(false);
   const hasOpenedEditor = useHasOpened(editorMode !== null);
@@ -99,6 +106,7 @@ export function App() {
   useEffect(() => {
     const unsubscribe = subscribeToAuth((profile) => {
       setUser(profile);
+      setAuthResolved(true);
     });
     return unsubscribe;
   }, []);
@@ -132,6 +140,7 @@ export function App() {
   const periodEndMs = periodWindow.end.getTime();
 
   // 4. Subscribe to the active budget's expenses bounded to [start, end)
+  const expensesKey = `${user.uid}|${activeBudget.id}|${periodStartMs}`;
   useEffect(() => {
     if (!hasBudgets) {
       setExpenses([]);
@@ -142,11 +151,26 @@ export function App() {
       activeBudget.id,
       new Date(periodStartMs),
       new Date(periodEndMs),
-      setExpenses,
+      (items) => {
+        setExpenses(items);
+        setLoadedExpensesKey(expensesKey);
+      },
       setSyncState,
     );
     return unsubscribe;
-  }, [user.uid, hasBudgets, activeBudget.id, periodStartMs, periodEndMs]);
+  }, [user.uid, hasBudgets, activeBudget.id, periodStartMs, periodEndMs, expensesKey]);
+
+  // Latch once everything is in; later budget/period switches never bring the splash back.
+  const isDataReady = authResolved && hasBudgets && loadedExpensesKey === expensesKey;
+  useEffect(() => {
+    if (isDataReady) setHasLoaded(true);
+  }, [isDataReady]);
+
+  // Never trap the user on the splash (e.g. a brand-new account opened offline).
+  useEffect(() => {
+    const id = window.setTimeout(() => setHasLoaded(true), 8000);
+    return () => window.clearTimeout(id);
+  }, []);
 
   // Total spent in active period window
   const totalSpent = useMemo(
@@ -363,6 +387,8 @@ export function App() {
         onUndo={handleUndoDelete}
         onDismiss={handleDismissUndo}
       />
+
+      <LoadingScreen visible={!hasLoaded} />
 
       <Suspense fallback={null}>
         {/* Create / Edit Budget Sheet */}
