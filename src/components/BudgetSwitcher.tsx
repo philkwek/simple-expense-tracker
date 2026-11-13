@@ -129,7 +129,7 @@ export const BudgetSwitcher: React.FC<BudgetSwitcherProps> = ({
           maskImage: scrollMask,
           WebkitMaskImage: scrollMask,
         }}
-        className="-mx-4 flex overflow-x-auto overscroll-x-contain px-4 py-1 [&::-webkit-scrollbar]:hidden"
+        className="-ml-4 flex overflow-x-auto overscroll-x-contain pl-4 py-1 [&::-webkit-scrollbar]:hidden"
       >
         <div ref={contentRef} className="flex w-max items-center gap-1.5">
           {isLoading ? (

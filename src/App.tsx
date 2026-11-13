@@ -292,20 +292,23 @@ export function App() {
     <div className="min-h-dvh w-full bg-[#F5F5F7] dark:bg-black text-neutral-900 dark:text-neutral-100 selection:bg-[#007AFF]/20">
       {/* Mobile-First Centered Column Shell */}
       <div className="w-full max-w-md mx-auto min-h-dvh flex flex-col px-4 safe-top safe-bottom">
-        {/* App Header Row */}
-        <header className="w-full flex items-center justify-between gap-2 py-1 mb-4">
-          <div className="flex items-center min-w-0">
-            <span className="text-[16px] font-bold tracking-tight text-neutral-900 dark:text-white">
-              Ledger
-            </span>
-          </div>
-
-          <div className="flex items-center">
+        {/* Main Content Stack */}
+        <main className="flex-1 w-full space-y-5">
+          {/* 0. Budget Switcher + account button */}
+          <div className="flex items-center gap-2">
+            <div className="min-w-0 flex-1">
+              <BudgetSwitcher
+                budgets={budgets}
+                activeBudgetId={activeBudget.id}
+                onSelectBudget={handleSelectBudget}
+                onCreateBudget={() => setEditorMode('create')}
+              />
+            </div>
             <button
               type="button"
               onClick={() => setIsAccountOpen(true)}
               aria-label="Open account and cloud sync settings"
-              className={`pressable touch-target h-9 px-3 rounded-full text-[12px] font-semibold inline-flex items-center gap-1.5 transition-colors ${
+              className={`pressable touch-target shrink-0 h-9 px-3 rounded-full text-[12px] font-semibold inline-flex items-center gap-1.5 transition-colors ${
                 user.isAnonymous
                   ? 'bg-white/90 dark:bg-neutral-900/80 border border-black/[0.055] dark:border-white/[0.08] shadow-[0_1px_2px_rgba(0,0,0,0.03)] text-neutral-700 dark:text-neutral-200'
                   : 'bg-[#007AFF]/12 dark:bg-[#0A84FF]/20 text-[#007AFF] dark:text-[#0A84FF]'
@@ -319,17 +322,6 @@ export function App() {
               <span className="max-w-[84px] truncate">{accountBadgeLabel}</span>
             </button>
           </div>
-        </header>
-
-        {/* Main Content Stack */}
-        <main className="flex-1 w-full space-y-5">
-          {/* 0. Budget Switcher */}
-          <BudgetSwitcher
-            budgets={budgets}
-            activeBudgetId={activeBudget.id}
-            onSelectBudget={handleSelectBudget}
-            onCreateBudget={() => setEditorMode('create')}
-          />
 
           {/* 1. Dashboard Budget Overview */}
           <BudgetCard
