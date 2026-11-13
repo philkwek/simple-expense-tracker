@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "dev-local-only",
+      "runtimeExecutable": "env",
+      "runtimeArgs": ["VITE_FIREBASE_API_KEY=", "npx", "vite", "--port", "5199", "--strictPort"],
+      "port": 5199
+    },
+    {
+      "name": "dev-local-only-2",
+      "runtimeExecutable": "env",
+      "runtimeArgs": ["VITE_FIREBASE_API_KEY=", "npx", "vite", "--port", "5201", "--strictPort"],
+      "port": 5201
+    }
+  ]
+}

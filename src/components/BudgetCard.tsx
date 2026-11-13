@@ -29,6 +29,27 @@ interface BudgetCardProps {
   onOpenSettings: () => void;
 }
 
+/** Raw (uncapped) usage percentage, so overspend reads as e.g. 120%. */
+const usagePercent = (spent: number, total: number): number =>
+  total > 0 ? (spent / total) * 100 : spent > 0 ? 100 : 0;
+
+const PercentRow: React.FC<{ percent: number; isOver: boolean; colorClass: string }> = ({
+  percent,
+  isOver,
+  colorClass,
+}) => {
+  const used = Math.round(percent);
+  const rest = Math.abs(100 - used);
+  return (
+    <div className="flex items-center justify-between text-[12px] font-medium tabular-nums">
+      <span className={colorClass}>{used}% used</span>
+      <span className={isOver ? 'text-[#FF3B30] dark:text-[#FF453A]' : 'text-neutral-400 dark:text-neutral-500'}>
+        {isOver ? `${rest}% over` : `${rest}% left`}
+      </span>
+    </div>
+  );
+};
+
 export const BudgetCard: React.FC<BudgetCardProps> = ({
   budget,
   totalSpent,
@@ -206,6 +227,11 @@ export const BudgetCard: React.FC<BudgetCardProps> = ({
             className={`h-full rounded-full ${barColorClass}`}
           />
         </div>
+        <PercentRow
+          percent={usagePercent(totalSpent, safeBudget)}
+          isOver={isOverBudget}
+          colorClass={isOverBudget || isWarning ? balanceColorClass : 'text-neutral-600 dark:text-neutral-300'}
+        />
 
         {/* Secondary Metrics Row: Spent vs Total Budget */}
         <div className="grid grid-cols-2 gap-3 pt-2">
@@ -262,6 +288,19 @@ export const BudgetCard: React.FC<BudgetCardProps> = ({
                   animate={{ width: `${todaySpentPercentage}%` }}
                   transition={SPRING_MOMENTUM}
                   className={`h-full rounded-full ${todayBarColorClass}`}
+                />
+              </div>
+              <div className="mt-1.5">
+                <PercentRow
+                  percent={usagePercent(todayAllowance.spentToday, todayAllowance.allowance)}
+                  isOver={isOverTodayAllowance}
+                  colorClass={
+                    isOverTodayAllowance
+                      ? 'text-[#FF3B30] dark:text-[#FF453A]'
+                      : isTodayWarning
+                        ? 'text-[#FF9500] dark:text-[#FF9F0A]'
+                        : 'text-neutral-600 dark:text-neutral-300'
+                  }
                 />
               </div>
             </div>
