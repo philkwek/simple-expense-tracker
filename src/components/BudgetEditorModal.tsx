@@ -85,6 +85,19 @@ const DAILY_HOURS =[0, 3, 4, 6, 9, 12, 18, 21];
 const MONTHLY_COMMON_DAYS = [1, 5, 10, 15, 20, 25, 28, 30, 31];
 const DEFAULT_REMINDER_TIME = '20:00';
 
+interface FormSnapshot {
+  name: string;
+  amountStr: string;
+  cadence: BudgetCadence;
+  periodStartDay: number;
+  currency: string;
+  dailyTracking: boolean;
+  remindersEnabled: boolean;
+  reminderTimes: string[];
+}
+
+const serializeForm = (form: FormSnapshot): string => JSON.stringify(form);
+
 const LABEL_CLASS =
   'block text-[12px] font-semibold uppercase tracking-[0.06em] text-neutral-400 dark:text-neutral-500 mb-2';
 
@@ -144,6 +157,10 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
   const [expenseCountFailed, setExpenseCountFailed] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
+  // Form values as loaded, so closing an edited budget can warn about unsaved changes.
+  const [initialSnapshot, setInitialSnapshot] = useState<string | null>(null);
+  const [isConfirmingDiscard, setIsConfirmingDiscard] = useState(false);
+
   const sheetY = useMotionValue(0);
 
   // Measured height of the active cadence panel, so the container can animate between sizes.
@@ -183,39 +200,56 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
     lastInitializedRef.current = initKey;
 
     sheetY.set(0);
-    setName(mode === 'edit' && budget ? budget.name : '');
+    const initialName = mode === 'edit' && budget ? budget.name : '';
+    setName(initialName);
     const initialAmount =
       mode === 'edit' && budget
         ? budget.amount
         : DEFAULT_USER_SETTINGS.budget;
     setAmountStr(String(initialAmount));
-    setCadence(
-      mode === 'edit' && budget ? budget.cadence : DEFAULT_USER_SETTINGS.cadence,
-    );
-    setPeriodStartDay(
+    const initialCadence =
+      mode === 'edit' && budget ? budget.cadence : DEFAULT_USER_SETTINGS.cadence;
+    setCadence(initialCadence);
+    const initialPeriodStartDay =
       mode === 'edit' && budget
         ? budget.periodStartDay
-        : DEFAULT_USER_SETTINGS.periodStartDay,
-    );
-    setCurrency(
+        : DEFAULT_USER_SETTINGS.periodStartDay;
+    setPeriodStartDay(initialPeriodStartDay);
+    const initialCurrency =
       mode === 'edit' && budget
         ? budget.currency
-        : DEFAULT_USER_SETTINGS.currency,
-    );
-    setDailyTracking(
-      mode === 'edit' && budget ? budget.dailyTracking === true : false,
-    );
+        : DEFAULT_USER_SETTINGS.currency;
+    setCurrency(initialCurrency);
+    const initialDailyTracking =
+      mode === 'edit' && budget ? budget.dailyTracking === true : false;
+    setDailyTracking(initialDailyTracking);
     const initialReminders =
       mode === 'edit' && budget ? budget.reminders : undefined;
-    const initialReminderTimes = initialReminders
+    const normalizedInitialTimes = initialReminders
       ? normalizeReminderTimes(initialReminders.times)
       : [];
-    setRemindersEnabled(initialReminders ? initialReminders.enabled : false);
-    setReminderTimes(
-      initialReminderTimes.length > 0
-        ? initialReminderTimes
-        : [DEFAULT_REMINDER_TIME],
+    const initialRemindersEnabled = initialReminders
+      ? initialReminders.enabled
+      : false;
+    const initialReminderTimes =
+      normalizedInitialTimes.length > 0
+        ? normalizedInitialTimes
+        : [DEFAULT_REMINDER_TIME];
+    setRemindersEnabled(initialRemindersEnabled);
+    setReminderTimes(initialReminderTimes);
+    setInitialSnapshot(
+      serializeForm({
+        name: initialName,
+        amountStr: String(initialAmount),
+        cadence: initialCadence,
+        periodStartDay: initialPeriodStartDay,
+        currency: initialCurrency,
+        dailyTracking: initialDailyTracking,
+        remindersEnabled: initialRemindersEnabled,
+        reminderTimes: initialReminderTimes,
+      }),
     );
+    setIsConfirmingDiscard(false);
     setReminderNotice(null);
     setIsEnablingReminders(false);
     setIsSaving(false);
@@ -275,19 +309,48 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
     };
   }, [isConfirmingDelete]);
 
+  const hasUnsavedChanges =
+    mode === 'edit' &&
+    initialSnapshot !== null &&
+    serializeForm({
+      name,
+      amountStr,
+      cadence,
+      periodStartDay,
+      currency,
+      dailyTracking,
+      remindersEnabled,
+      reminderTimes,
+    }) !== initialSnapshot;
+
+  // Every dismissal path (X, backdrop, Escape, swipe down) goes through here so an
+  // edited budget asks before throwing changes away.
+  const requestClose = () => {
+    if (hasUnsavedChanges && !isSaving && !isDeleting) {
+      animate(sheetY, 0, SPRING_MOMENTUM);
+      setIsConfirmingDiscard(true);
+      return;
+    }
+    onClose();
+  };
+  const requestCloseRef = useRef(requestClose);
+  requestCloseRef.current = requestClose;
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || !isOpen || isSaving || isDeleting) return;
-      // Escape steps back out of the delete confirmation before closing the sheet
-      if (isConfirmingDelete) {
+      // Escape steps back out of a confirmation before closing the sheet
+      if (isConfirmingDiscard) {
+        setIsConfirmingDiscard(false);
+      } else if (isConfirmingDelete) {
         setIsConfirmingDelete(false);
       } else {
-        onClose();
+        requestCloseRef.current();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isOpen, onClose, isSaving, isDeleting, isConfirmingDelete]);
+  }, [isOpen, isSaving, isDeleting, isConfirmingDelete, isConfirmingDiscard]);
 
   const handleCadenceSelect = (nextCadence: BudgetCadence) => {
     setCadence(nextCadence);
@@ -350,7 +413,7 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
     const vy = state.velocityY;
 
     if (currentY > 110 || vy > 650) {
-      onClose();
+      requestClose();
     } else {
       animate(sheetY, 0, {
         ...SPRING_MOMENTUM,
@@ -571,7 +634,7 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={springTransition}
-            onClick={onClose}
+            onClick={requestClose}
             className="fixed inset-0 bg-black/40 backdrop-blur-sm"
           />
 
@@ -636,7 +699,7 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
 
               <button
                 type="button"
-                onClick={onClose}
+                onClick={requestClose}
                 aria-label="Close budget editor"
                 className="pressable touch-target w-9 h-9 shrink-0 rounded-full bg-black/[0.05] dark:bg-white/[0.08] text-neutral-500 dark:text-neutral-300 flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#007AFF]/40"
               >
@@ -1174,6 +1237,67 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
               </AnimatePresence>
             </form>
           </motion.div>
+
+          {/* Discard-changes confirmation, layered over the sheet so it's visible at any scroll position */}
+          <AnimatePresence>
+            {isConfirmingDiscard && (
+              <motion.div
+                key="discard-confirmation"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={springTransition}
+                onClick={() => setIsConfirmingDiscard(false)}
+                className="absolute inset-0 z-20 flex items-center justify-center p-6 rounded-t-[28px] sm:rounded-[28px] bg-black/30"
+              >
+                <motion.div
+                  role="alertdialog"
+                  aria-modal="true"
+                  aria-labelledby="budget-discard-title"
+                  aria-describedby="budget-discard-description"
+                  initial={{ opacity: 0, scale: prefersReducedMotion ? 1 : 0.96 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: prefersReducedMotion ? 1 : 0.96 }}
+                  transition={springTransition}
+                  onClick={(e) => e.stopPropagation()}
+                  className="w-full max-w-[300px] rounded-2xl bg-white dark:bg-neutral-800 p-4 shadow-2xl"
+                >
+                  <h3
+                    id="budget-discard-title"
+                    className="text-[15px] font-semibold tracking-tight text-neutral-900 dark:text-white"
+                  >
+                    Discard changes?
+                  </h3>
+                  <p
+                    id="budget-discard-description"
+                    className="mt-1 text-[13px] text-neutral-500 dark:text-neutral-400"
+                  >
+                    You'll lose the changes you made to this budget.
+                  </p>
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      autoFocus
+                      onClick={() => setIsConfirmingDiscard(false)}
+                      className="pressable h-11 rounded-xl bg-black/[0.05] dark:bg-white/[0.08] text-[15px] font-semibold text-neutral-700 dark:text-neutral-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#007AFF]/40"
+                    >
+                      Keep Editing
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsConfirmingDiscard(false);
+                        onClose();
+                      }}
+                      className="pressable h-11 rounded-xl bg-[#FF3B30] dark:bg-[#FF453A] text-white text-[15px] font-semibold focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#007AFF]/40"
+                    >
+                      Discard
+                    </button>
+                  </div>
+                </motion.div>
+              </motion.div>
+            )}
+          </AnimatePresence>
           </motion.div>
         </div>
       )}
