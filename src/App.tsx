@@ -5,6 +5,8 @@ import {
   BudgetInput,
   DEFAULT_USER_SETTINGS,
   ExpenseItem,
+  hasDateRange,
+  isOneOffBudget,
   legacySettingsToBudget,
   SyncState,
   UserProfile,
@@ -13,6 +15,7 @@ import {
   calculatePeriodWindow,
   computeDailyAllowances,
   getDailyAllowanceSummary,
+  getExpenseQueryRange,
 } from './utils/periodCalculator';
 import { subscribeToAuth } from './services/authService';
 import {
@@ -130,17 +133,27 @@ export function App() {
     budgets.find((b) => b.id === activeBudgetId) ?? budgets[0] ?? PLACEHOLDER_BUDGET;
   const hasBudgets = budgets.length > 0;
 
-  // 3. Calculate active or historical PeriodWindow from the active budget + periodOffset
-  const { cadence, periodStartDay } = activeBudget;
-  const periodWindow = useMemo(
-    () => calculatePeriodWindow({ cadence, periodStartDay }, new Date(), periodOffset),
-    [cadence, periodStartDay, periodOffset],
+  // 3. Calculate active or historical PeriodWindow from the active budget + periodOffset.
+  // One-off budgets need their kind/dates so the window is a single open-ended period.
+  const { cadence, periodStartDay, kind, startDate, endDate } = activeBudget;
+  const periodConfig = useMemo(
+    () => ({ cadence, periodStartDay, kind, startDate, endDate }),
+    [cadence, periodStartDay, kind, startDate, endDate],
   );
-  const periodStartMs = periodWindow.start.getTime();
-  const periodEndMs = periodWindow.end.getTime();
+  const periodWindow = useMemo(
+    () => calculatePeriodWindow(periodConfig, new Date(), periodOffset),
+    [periodConfig, periodOffset],
+  );
+  // One-off budgets count every expense logged to them, regardless of date.
+  const expenseQueryRange = useMemo(
+    () => getExpenseQueryRange(periodConfig, periodWindow),
+    [periodConfig, periodWindow],
+  );
+  const periodStartMs = expenseQueryRange.start.getTime();
+  const periodEndMs = expenseQueryRange.end.getTime();
 
   // 4. Subscribe to the active budget's expenses bounded to [start, end)
-  const expensesKey = `${user.uid}|${activeBudget.id}|${periodStartMs}`;
+  const expensesKey = `${user.uid}|${activeBudget.id}|${periodStartMs}|${periodEndMs}`;
   useEffect(() => {
     if (!hasBudgets) {
       setExpenses([]);
@@ -159,6 +172,13 @@ export function App() {
     );
     return unsubscribe;
   }, [user.uid, hasBudgets, activeBudget.id, periodStartMs, periodEndMs, expensesKey]);
+
+  // A one-off budget has exactly one period, so never leave a past-period offset active.
+  useEffect(() => {
+    if (isOneOffBudget(activeBudget) && periodOffset !== 0) {
+      setPeriodOffset(0);
+    }
+  }, [activeBudget, periodOffset]);
 
   // Latch once everything is in; later budget/period switches never bring the splash back.
   const isDataReady = authResolved && hasBudgets && loadedExpensesKey === expensesKey;
@@ -181,22 +201,35 @@ export function App() {
     [expenses],
   );
 
-  // Rolling daily allowance (weekly/monthly budgets with dailyTracking enabled)
+  // Rolling daily allowance (weekly/monthly budgets with dailyTracking enabled; dated one-offs)
+  const isOneOff = isOneOffBudget(activeBudget);
   const showDailyAllowance =
-    activeBudget.dailyTracking === true && activeBudget.cadence !== 'daily';
+    activeBudget.dailyTracking === true &&
+    (isOneOff ? hasDateRange(activeBudget) : activeBudget.cadence !== 'daily');
+  const countEarlierSpending = isOneOff;
 
   const dailyAllowances = useMemo(
     () =>
       showDailyAllowance
-        ? computeDailyAllowances(activeBudget.amount, periodWindow, expenses)
+        ? computeDailyAllowances(activeBudget.amount, periodWindow, expenses, {
+            countEarlierSpending,
+          })
         : null,
-    [showDailyAllowance, activeBudget.amount, periodWindow, expenses],
+    [
+      showDailyAllowance,
+      activeBudget.amount,
+      periodWindow,
+      expenses,
+      countEarlierSpending,
+    ],
   );
 
   const todayAllowance = useMemo(
     () =>
       showDailyAllowance && periodOffset === 0
-        ? getDailyAllowanceSummary(activeBudget.amount, periodWindow, expenses)
+        ? getDailyAllowanceSummary(activeBudget.amount, periodWindow, expenses, new Date(), {
+            countEarlierSpending,
+          })
         : null,
     [
       showDailyAllowance,
@@ -204,6 +237,7 @@ export function App() {
       activeBudget.amount,
       periodWindow,
       expenses,
+      countEarlierSpending,
     ],
   );
 
