@@ -5,6 +5,7 @@ import {
   useMotionValue,
   useReducedMotion,
   animate,
+  type Transition,
 } from 'framer-motion';
 import {
   X,
@@ -113,6 +114,36 @@ const serializeForm = (form: FormSnapshot): string => JSON.stringify(form);
 const LABEL_CLASS =
   'block text-[12px] font-semibold uppercase tracking-[0.06em] text-neutral-400 dark:text-neutral-500 mb-2';
 
+/**
+ * A form section that grows/shrinks its height while fading, so the sections below
+ * glide into place instead of jumping. Must be a direct child of `AnimatePresence`.
+ *
+ * The form's `space-y-5` gap is replaced by `pt-5` inside the clipped area: a margin
+ * would appear/disappear instantly. The `-mx-1 px-1` / `-mb-1 pb-1` pairs leave room
+ * for focus rings that would otherwise be clipped by `overflow-hidden`.
+ */
+const CollapsibleSection: React.FC<{
+  transition: Transition;
+  children: React.ReactNode;
+}> = ({ transition, children }) => (
+  <motion.div
+    initial={{ height: 0, opacity: 0 }}
+    animate={{
+      height: 'auto',
+      opacity: 1,
+      transition: { height: transition, opacity: { duration: 0.2, delay: 0.05 } },
+    }}
+    exit={{
+      height: 0,
+      opacity: 0,
+      transition: { height: transition, opacity: { duration: 0.1, ease: 'easeIn' } },
+    }}
+    className="!mt-0 -mx-1 -mb-1 overflow-hidden"
+  >
+    <div className="px-1 pt-5 pb-1">{children}</div>
+  </motion.div>
+);
+
 export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
   isOpen,
   onClose,
@@ -218,6 +249,7 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
   // Load the form once per open (and re-load if the edited budget changes).
   // Layout effect so a previous session's delete confirmation never flashes on reopen.
   const lastInitializedRef = useRef<string | null>(null);
+  const [formSession, setFormSession] = useState(0);
   useLayoutEffect(() => {
     if (!isOpen) {
       lastInitializedRef.current = null;
@@ -226,6 +258,7 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
     const initKey = `${mode}:${budget?.id ?? ''}`;
     if (lastInitializedRef.current === initKey) return;
     lastInitializedRef.current = initKey;
+    setFormSession((n) => n + 1);
 
     sheetY.set(0);
     const initialKind: BudgetKind =
@@ -900,8 +933,11 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
                 </div>
               </div>
 
+              {/* 3+4. Cycle settings (recurring) or dates (one-off); one collapses as the other expands. */}
+              <AnimatePresence initial={false} key={`type-sections-${formSession}`}>
               {!isOneOffKind && (
-                <>
+                <CollapsibleSection key="recurring" transition={springTransition}>
+                <div className="space-y-5">
               {/* 3. Budget Reset Cadence (Segmented Pill Control) */}
               <div>
                 <span className={LABEL_CLASS}>Budget Cycle Cadence</span>
@@ -1089,12 +1125,13 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
               </AnimatePresence>
               </div>
               </motion.div>
-                </>
+                </div>
+                </CollapsibleSection>
               )}
 
-              {/* 3+4 (one-off). Dates replace the cadence and cycle-boundary sections. */}
+              {/* One-off: dates replace the cadence and cycle-boundary sections. */}
               {isOneOffKind && (
-                <div>
+                <CollapsibleSection key="one-off" transition={springTransition}>
                   <span className={`${LABEL_CLASS} flex items-center gap-1.5`}>
                     <CalendarDays className="w-3.5 h-3.5" />
                     <span>Dates</span>
@@ -1204,23 +1241,14 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
                       )}
                     </AnimatePresence>
                   </motion.div>
-                </div>
+                </CollapsibleSection>
               )}
+              </AnimatePresence>
 
               {/* 5. Daily Allowance Tracking (recurring weekly/monthly, dated one-offs) */}
-              <AnimatePresence initial={false}>
+              <AnimatePresence initial={false} key={`daily-tracking-${formSession}`}>
                 {showDailyTracking && (
-                  <motion.div
-                    key="daily-tracking"
-                    initial={{ opacity: 0, y: prefersReducedMotion ? 0 : -6 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{
-                      opacity: 0,
-                      y: prefersReducedMotion ? 0 : -6,
-                      transition: { duration: 0.1, ease: 'easeIn' },
-                    }}
-                    transition={springTransition}
-                  >
+                  <CollapsibleSection key="daily-tracking" transition={springTransition}>
                     <span className={`${LABEL_CLASS} flex items-center gap-1.5`}>
                       <CalendarDays className="w-3.5 h-3.5" />
                       <span>Tracking</span>
@@ -1263,13 +1291,14 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
                             }, adjusting as you spend.`
                           : "Splits what's left of the budget across the remaining days in the cycle."}
                     </p>
-                  </motion.div>
+                  </CollapsibleSection>
                 )}
               </AnimatePresence>
 
               {/* 6. Reminders (recurring always, one-off only when dated) */}
+              <AnimatePresence initial={false} key={`reminders-${formSession}`}>
               {showReminders && (
-              <div>
+              <CollapsibleSection key="reminders" transition={springTransition}>
                 <span className={`${LABEL_CLASS} flex items-center gap-1.5`}>
                   <Bell className="w-3.5 h-3.5" />
                   <span>Reminders</span>
@@ -1400,8 +1429,9 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
                     </motion.div>
                   )}
                 </AnimatePresence>
-              </div>
+              </CollapsibleSection>
               )}
+              </AnimatePresence>
 
               {/* 7. Currency Selector */}
               <div>
