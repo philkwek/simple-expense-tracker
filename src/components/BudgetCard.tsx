@@ -6,6 +6,8 @@ import {
   RotateCcw,
   Clock,
   AlertTriangle,
+  CalendarClock,
+  Flag,
 } from 'lucide-react';
 import { PeriodWindow } from '../types/expense';
 import { formatCurrency } from '../utils/periodCalculator';
@@ -109,6 +111,20 @@ export const BudgetCard: React.FC<BudgetCardProps> = ({
       ? 'bg-[#FF9500]/12 text-[#D97706] dark:bg-[#FF9F0A]/18 dark:text-[#FF9F0A]'
       : 'bg-[#34C759]/12 text-[#248A3D] dark:bg-[#30D158]/18 dark:text-[#30D158]';
 
+  const oneOff = period.oneOff;
+  const isOneOffEnded = oneOff?.status === 'ended';
+  const isOneOffUpcoming = oneOff?.status === 'upcoming';
+  // An ended one-off reads as neutral grey, except when overspending still wins.
+  const endedBadgeClass =
+    'bg-black/[0.06] text-neutral-500 dark:bg-white/[0.08] dark:text-neutral-400';
+  const effectiveStatusBadgeClass =
+    isOneOffEnded && !isOverBudget ? endedBadgeClass : statusBadgeClass;
+  const periodPillLabel = oneOff
+    ? oneOff.dated
+      ? period.label
+      : 'One-off'
+    : period.label;
+
   return (
     <motion.section
       layout
@@ -118,42 +134,58 @@ export const BudgetCard: React.FC<BudgetCardProps> = ({
     >
       {/* Top Bar: Active Cycle Navigation & Countdown Pill */}
       <div className="flex items-center justify-between gap-2 mb-4">
-        <div className="inline-flex items-center bg-white/90 dark:bg-neutral-900/80 border border-black/[0.055] dark:border-white/[0.08] shadow-[0_1px_2px_rgba(0,0,0,0.03)] rounded-full p-0.5">
-          <button
-            type="button"
-            onClick={onPrevPeriod}
-            aria-label="Previous budget period"
-            className="pressable touch-target flex items-center justify-center w-9 h-9 rounded-full text-neutral-600 dark:text-neutral-300 hover:bg-black/[0.05] dark:hover:bg-white/[0.08]"
+        {oneOff ? (
+          <div
+            role="group"
+            aria-label={
+              oneOff.dated
+                ? `Budget period: ${period.label}`
+                : 'One-off budget period'
+            }
+            className="inline-flex items-center bg-white/90 dark:bg-neutral-900/80 border border-black/[0.055] dark:border-white/[0.08] shadow-[0_1px_2px_rgba(0,0,0,0.03)] rounded-full p-0.5"
           >
-            <ChevronLeft className="w-4 h-4" />
-          </button>
-
-          <AnimatePresence mode="wait" initial={false}>
-            <motion.span
-              key={`${period.start.getTime()}-${period.end.getTime()}`}
-              initial={{ opacity: 0, y: 4 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -4 }}
-              transition={SPRING_CRITICALLY_DAMPED}
-              className="px-2.5 text-[13px] font-semibold tracking-tight text-neutral-800 dark:text-neutral-100 whitespace-nowrap"
+            <span className="px-3.5 py-2 text-[13px] font-semibold tracking-tight text-neutral-800 dark:text-neutral-100 whitespace-nowrap">
+              {periodPillLabel}
+            </span>
+          </div>
+        ) : (
+          <div className="inline-flex items-center bg-white/90 dark:bg-neutral-900/80 border border-black/[0.055] dark:border-white/[0.08] shadow-[0_1px_2px_rgba(0,0,0,0.03)] rounded-full p-0.5">
+            <button
+              type="button"
+              onClick={onPrevPeriod}
+              aria-label="Previous budget period"
+              className="pressable touch-target flex items-center justify-center w-9 h-9 rounded-full text-neutral-600 dark:text-neutral-300 hover:bg-black/[0.05] dark:hover:bg-white/[0.08]"
             >
-              {period.label}
-            </motion.span>
-          </AnimatePresence>
+              <ChevronLeft className="w-4 h-4" />
+            </button>
 
-          <button
-            type="button"
-            onClick={onNextPeriod}
-            disabled={periodOffset >= 0}
-            aria-label="Next budget period"
-            className="pressable touch-target flex items-center justify-center w-9 h-9 rounded-full text-neutral-600 dark:text-neutral-300 hover:bg-black/[0.05] dark:hover:bg-white/[0.08] disabled:opacity-30 disabled:pointer-events-none"
-          >
-            <ChevronRight className="w-4 h-4" />
-          </button>
-        </div>
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.span
+                key={`${period.start.getTime()}-${period.end.getTime()}`}
+                initial={{ opacity: 0, y: 4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -4 }}
+                transition={SPRING_CRITICALLY_DAMPED}
+                className="px-2.5 text-[13px] font-semibold tracking-tight text-neutral-800 dark:text-neutral-100 whitespace-nowrap"
+              >
+                {period.label}
+              </motion.span>
+            </AnimatePresence>
+
+            <button
+              type="button"
+              onClick={onNextPeriod}
+              disabled={periodOffset >= 0}
+              aria-label="Next budget period"
+              className="pressable touch-target flex items-center justify-center w-9 h-9 rounded-full text-neutral-600 dark:text-neutral-300 hover:bg-black/[0.05] dark:hover:bg-white/[0.08] disabled:opacity-30 disabled:pointer-events-none"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        )}
 
         <div className="flex items-center gap-1.5">
-          {periodOffset !== 0 && (
+          {!oneOff && periodOffset !== 0 && (
             <motion.button
               initial={{ opacity: 0, scale: 0.9 }}
               animate={{ opacity: 1, scale: 1 }}
@@ -170,10 +202,15 @@ export const BudgetCard: React.FC<BudgetCardProps> = ({
           )}
 
           <span
-            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[12px] font-medium ${statusBadgeClass}`}
+            aria-label={`Budget status: ${period.countdownLabel}`}
+            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[12px] font-medium ${effectiveStatusBadgeClass}`}
           >
             {isOverBudget ? (
               <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+            ) : isOneOffEnded ? (
+              <Flag className="w-3.5 h-3.5 shrink-0" />
+            ) : isOneOffUpcoming ? (
+              <CalendarClock className="w-3.5 h-3.5 shrink-0" />
             ) : (
               <Clock className="w-3.5 h-3.5 shrink-0" />
             )}
