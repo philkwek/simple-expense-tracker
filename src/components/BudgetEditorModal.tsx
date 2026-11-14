@@ -22,10 +22,12 @@ import {
   Budget,
   BudgetCadence,
   BudgetInput,
+  BudgetKind,
   BUDGET_NAME_MAX_LENGTH,
   DEFAULT_USER_SETTINGS,
   REMINDER_MAX_TIMES,
   SUPPORTED_CURRENCIES,
+  hasDateRange,
 } from '../types/expense';
 import {
   calculatePeriodWindow,
@@ -33,6 +35,7 @@ import {
   formatHourLabel,
   getCycleDayCount,
   getOrdinalSuffix,
+  toDateInputValue,
 } from '../utils/periodCalculator';
 import {
   REMINDER_TIME_OPTIONS,
@@ -81,11 +84,20 @@ const WEEKDAYS = [
 ];
 
 const CADENCE_OPTIONS: readonly BudgetCadence[] = ['daily', 'weekly', 'monthly'];
+const KIND_OPTIONS: readonly BudgetKind[] = ['recurring', 'oneOff'];
+const KIND_LABELS: Record<BudgetKind, string> = {
+  recurring: 'Recurring',
+  oneOff: 'One-off',
+};
 const DAILY_HOURS =[0, 3, 4, 6, 9, 12, 18, 21];
 const MONTHLY_COMMON_DAYS = [1, 5, 10, 15, 20, 25, 28, 30, 31];
 const DEFAULT_REMINDER_TIME = '20:00';
 
 interface FormSnapshot {
+  kind: BudgetKind;
+  datesEnabled: boolean;
+  startDate: string;
+  endDate: string;
   name: string;
   amountStr: string;
   cadence: BudgetCadence;
@@ -115,6 +127,10 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
   const prefersReducedMotion = useReducedMotion();
   const springTransition = getSpringTransition(prefersReducedMotion);
 
+  const [kind, setKind] = useState<BudgetKind>('recurring');
+  const [datesEnabled, setDatesEnabled] = useState(false);
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
   const [name, setName] = useState('');
   const [amountStr, setAmountStr] = useState(
     String(DEFAULT_USER_SETTINGS.budget),
@@ -173,7 +189,19 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
     const observer = new ResizeObserver(() => setCadencePanelHeight(el.offsetHeight));
     observer.observe(el);
     return () => observer.disconnect();
-  }, [isOpen]);
+  }, [isOpen, kind]);
+
+  // Measured height of the one-off date fields, so the Dates section can grow/shrink smoothly.
+  const datesPanelRef = useRef<HTMLDivElement>(null);
+  const [datesPanelHeight, setDatesPanelHeight] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    const el = datesPanelRef.current;
+    if (!isOpen || !el) return;
+    setDatesPanelHeight(el.offsetHeight);
+    const observer = new ResizeObserver(() => setDatesPanelHeight(el.offsetHeight));
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [isOpen, kind, datesEnabled]);
   const dragStateRef = useRef<{
     startY: number;
     lastY: number;
@@ -200,6 +228,24 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
     lastInitializedRef.current = initKey;
 
     sheetY.set(0);
+    const initialKind: BudgetKind =
+      mode === 'edit' && budget && budget.kind === 'oneOff'
+        ? 'oneOff'
+        : 'recurring';
+    setKind(initialKind);
+    const initialDatesEnabled =
+      mode === 'edit' && budget ? hasDateRange(budget) : false;
+    const initialStartDate =
+      mode === 'edit' && budget && initialDatesEnabled
+        ? budget.startDate ?? ''
+        : '';
+    const initialEndDate =
+      mode === 'edit' && budget && initialDatesEnabled
+        ? budget.endDate ?? ''
+        : '';
+    setDatesEnabled(initialDatesEnabled);
+    setStartDate(initialStartDate);
+    setEndDate(initialEndDate);
     const initialName = mode === 'edit' && budget ? budget.name : '';
     setName(initialName);
     const initialAmount =
@@ -239,6 +285,10 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
     setReminderTimes(initialReminderTimes);
     setInitialSnapshot(
       serializeForm({
+        kind: initialKind,
+        datesEnabled: initialDatesEnabled,
+        startDate: initialStartDate,
+        endDate: initialEndDate,
         name: initialName,
         amountStr: String(initialAmount),
         cadence: initialCadence,
@@ -313,6 +363,10 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
     mode === 'edit' &&
     initialSnapshot !== null &&
     serializeForm({
+      kind,
+      datesEnabled,
+      startDate,
+      endDate,
       name,
       amountStr,
       cadence,
@@ -369,6 +423,25 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
     }
   };
 
+  const handleToggleDates = () => {
+    if (datesEnabled) {
+      setDatesEnabled(false);
+      // Clearing keeps an undated one-off clean (and out of the unsaved-changes snapshot).
+      setStartDate('');
+      setEndDate('');
+      return;
+    }
+    const today = new Date();
+    const defaultEnd = new Date(
+      today.getFullYear(),
+      today.getMonth(),
+      today.getDate() + 6,
+    );
+    setStartDate(toDateInputValue(today.getTime()));
+    setEndDate(toDateInputValue(defaultEnd.getTime()));
+    setDatesEnabled(true);
+  };
+
   const handleSheetPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (e.button !== 0) return;
     e.currentTarget.setPointerCapture(e.pointerId);
@@ -423,7 +496,20 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
   };
 
   const trimmedName = name.trim();
-  const canSubmit = trimmedName.length > 0 && !isSaving;
+  // "YYYY-MM-DD" sorts chronologically, so a plain string compare is enough.
+  const dateRangeInvalid =
+    kind === 'oneOff' &&
+    datesEnabled &&
+    !!startDate &&
+    !!endDate &&
+    endDate < startDate;
+  const datesIncomplete =
+    kind === 'oneOff' && datesEnabled && (!startDate || !endDate);
+  const canSubmit =
+    trimmedName.length > 0 &&
+    !isSaving &&
+    !dateRangeInvalid &&
+    !datesIncomplete;
 
   const handleToggleReminders = () => {
     if (remindersEnabled) {
@@ -497,6 +583,7 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
     if (isSaving) return;
     if (isConfirmingDelete) return;
     if (!trimmedName) return;
+    if (dateRangeInvalid || datesIncomplete) return;
 
     const fallbackAmount =
       mode === 'edit' && budget ? budget.amount : DEFAULT_USER_SETTINGS.budget;
@@ -506,10 +593,16 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
         ? Math.round(parsedAmount * 100) / 100
         : fallbackAmount;
 
+    const isOneOff = kind === 'oneOff';
+    const includeDates = isOneOff && datesEnabled;
+    // An undated one-off has no schedule to spread or remind against.
+    const isUndatedOneOff = isOneOff && !datesEnabled;
     const hadReminders =
       mode === 'edit' && budget ? budget.reminders !== undefined : false;
+    // Recurring budgets always allow reminders; one-off budgets only when dated.
+    const remindersAllowed = !isUndatedOneOff;
     const reminders: BudgetInput['reminders'] =
-      remindersEnabled || hadReminders
+      remindersAllowed && (remindersEnabled || hadReminders)
         ? {
             enabled: remindersEnabled,
             times: normalizeReminderTimes(reminderTimes),
@@ -521,12 +614,14 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
     setIsSaving(true);
     try {
       await onSave({
+        kind,
+        ...(includeDates ? { startDate, endDate } : {}),
         name: trimmedName,
         amount: validAmount,
         cadence,
         periodStartDay,
         currency,
-        dailyTracking,
+        dailyTracking: isUndatedOneOff ? false : dailyTracking,
         ...(reminders ? { reminders } : {}),
       });
       onClose();
@@ -555,10 +650,17 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
     SUPPORTED_CURRENCIES[0];
 
   const title = mode === 'create' ? 'New Budget' : 'Edit Budget';
+  const isOneOffKind = kind === 'oneOff';
+  const showDailyTracking = isOneOffKind ? datesEnabled : cadence !== 'daily';
+  const showReminders = !isOneOffKind || datesEnabled;
   const subtitle =
     mode === 'create'
-      ? 'Set an allowance and when it resets'
-      : 'Change the allowance, cycle or currency';
+      ? isOneOffKind
+        ? 'Set a total for a trip or one-off spend'
+        : 'Set an allowance and when it resets'
+      : isOneOffKind
+        ? 'Change the total, dates or currency'
+        : 'Change the allowance, cycle or currency';
   const submitLabel = isSaving
     ? 'Saving…'
     : mode === 'create'
@@ -572,11 +674,16 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
     Number.isFinite(parsedDailyAmount) && parsedDailyAmount >= 0
       ? parsedDailyAmount
       : 0;
+  // One-offs spread over their chosen dates; recurring budgets over the active cycle.
+  const allowanceWindow = calculatePeriodWindow(
+    isOneOffKind
+      ? { kind: 'oneOff', startDate, endDate, cadence, periodStartDay }
+      : { cadence, periodStartDay },
+    new Date(),
+  );
+  const allowanceDayCount = getCycleDayCount(allowanceWindow);
   const dailyTrackingPerDay = formatCurrency(
-    dailyTrackingAmount /
-      getCycleDayCount(
-        calculatePeriodWindow({ cadence, periodStartDay }, new Date()),
-      ),
+    dailyTrackingAmount / allowanceDayCount,
     currency,
   );
 
@@ -612,8 +719,11 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
 
   const reminderHelperText = reminderNotice ?? reminderSupportNotice;
 
-  const reminderAllowanceHelper =
-    dailyTracking && cadence !== 'daily'
+  const reminderAllowanceHelper = isOneOffKind
+    ? dailyTracking && datesEnabled
+      ? "Each reminder includes what's left of today's allowance."
+      : "Each reminder includes what's left of this budget."
+    : dailyTracking && cadence !== 'daily'
       ? "Each reminder includes what's left of today's allowance."
       : cadence === 'daily'
         ? "Each reminder includes what's left today."
@@ -708,6 +818,40 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-5">
+              {/* Budget type — chosen once, at creation (the service locks it afterwards). */}
+              {mode === 'create' && (
+                <div>
+                  <span className={LABEL_CLASS}>Budget Type</span>
+                  <div className="grid grid-cols-2 p-1 rounded-2xl bg-black/[0.05] dark:bg-white/[0.07] relative">
+                    <motion.div
+                      aria-hidden="true"
+                      initial={false}
+                      animate={{ x: `${KIND_OPTIONS.indexOf(kind) * 100}%` }}
+                      transition={springTransition}
+                      className="absolute top-1 bottom-1 left-1 w-[calc((100%-0.5rem)/2)] rounded-xl bg-white dark:bg-neutral-600 shadow-sm dark:shadow-none dark:ring-1 dark:ring-white/10"
+                    />
+                    {KIND_OPTIONS.map((option) => {
+                      const isActive = kind === option;
+                      return (
+                        <button
+                          key={option}
+                          type="button"
+                          onClick={() => setKind(option)}
+                          aria-pressed={isActive}
+                          className={`pressable relative z-10 py-2.5 text-[13px] font-semibold rounded-xl transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#007AFF]/40 ${
+                            isActive
+                              ? 'text-neutral-900 dark:text-white'
+                              : 'text-neutral-500 dark:text-neutral-400'
+                          }`}
+                        >
+                          {KIND_LABELS[option]}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               {/* 1. Name */}
               <div>
                 <label
@@ -736,7 +880,7 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
                   htmlFor="budget-editor-amount"
                   className={LABEL_CLASS}
                 >
-                  Budget per period
+                  {isOneOffKind ? 'Total budget' : 'Budget per period'}
                 </label>
                 <div className="relative flex items-center">
                   <span className="pointer-events-none absolute left-4 text-[20px] font-semibold text-neutral-400 dark:text-neutral-500 tabular-nums">
@@ -756,6 +900,8 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
                 </div>
               </div>
 
+              {!isOneOffKind && (
+                <>
               {/* 3. Budget Reset Cadence (Segmented Pill Control) */}
               <div>
                 <span className={LABEL_CLASS}>Budget Cycle Cadence</span>
@@ -943,10 +1089,127 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
               </AnimatePresence>
               </div>
               </motion.div>
+                </>
+              )}
 
-              {/* 5. Daily Allowance Tracking (weekly/monthly only) */}
+              {/* 3+4 (one-off). Dates replace the cadence and cycle-boundary sections. */}
+              {isOneOffKind && (
+                <div>
+                  <span className={`${LABEL_CLASS} flex items-center gap-1.5`}>
+                    <CalendarDays className="w-3.5 h-3.5" />
+                    <span>Dates</span>
+                  </span>
+                  <div className="flex items-center justify-between gap-3 py-0.5">
+                    <label
+                      htmlFor="budget-editor-dates"
+                      className="text-[15px] font-medium text-neutral-800 dark:text-neutral-100"
+                    >
+                      Set dates
+                    </label>
+                    <button
+                      id="budget-editor-dates"
+                      type="button"
+                      role="switch"
+                      aria-checked={datesEnabled}
+                      aria-label="Set dates"
+                      onClick={handleToggleDates}
+                      className={`pressable relative w-[51px] h-[31px] shrink-0 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#007AFF]/40 ${
+                        datesEnabled
+                          ? 'bg-[#34C759] dark:bg-[#30D158]'
+                          : 'bg-black/[0.12] dark:bg-white/[0.16]'
+                      }`}
+                    >
+                      <motion.span
+                        aria-hidden="true"
+                        initial={false}
+                        animate={{ x: datesEnabled ? 20 : 0 }}
+                        transition={springTransition}
+                        className="absolute top-[2px] left-[2px] w-[27px] h-[27px] rounded-full bg-white shadow-sm"
+                      />
+                    </button>
+                  </div>
+                  <p className="mt-1 text-[13px] text-neutral-500 dark:text-neutral-400">
+                    {datesEnabled
+                      ? 'For trips, holidays and anything short-term.'
+                      : 'No dates — one running total.'}
+                  </p>
+
+                  {/* Height follows the date fields; they crossfade in/out like the cadence panel. */}
+                  <motion.div
+                    initial={false}
+                    animate={{
+                      height: datesEnabled ? datesPanelHeight ?? 'auto' : 0,
+                    }}
+                    transition={springTransition}
+                    className="-mx-1 overflow-hidden"
+                  >
+                    <AnimatePresence initial={false}>
+                      {datesEnabled && (
+                        <motion.div
+                          ref={datesPanelRef}
+                          key="date-range"
+                          initial={{ opacity: 0, y: prefersReducedMotion ? 0 : 6 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{
+                            opacity: 0,
+                            y: prefersReducedMotion ? 0 : -6,
+                            transition: { duration: 0.1, ease: 'easeIn' },
+                          }}
+                          transition={springTransition}
+                          className="px-1 pt-3"
+                        >
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label
+                                htmlFor="budget-editor-start-date"
+                                className={LABEL_CLASS}
+                              >
+                                Starts
+                              </label>
+                              <input
+                                id="budget-editor-start-date"
+                                type="date"
+                                value={startDate}
+                                max={endDate || undefined}
+                                onChange={(e) => setStartDate(e.target.value)}
+                                className="w-full h-11 px-3.5 rounded-xl bg-black/[0.04] dark:bg-white/[0.06] text-[15px] text-neutral-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#007AFF]/40 [color-scheme:light] dark:[color-scheme:dark]"
+                              />
+                            </div>
+                            <div>
+                              <label
+                                htmlFor="budget-editor-end-date"
+                                className={LABEL_CLASS}
+                              >
+                                Ends
+                              </label>
+                              <input
+                                id="budget-editor-end-date"
+                                type="date"
+                                value={endDate}
+                                min={startDate || undefined}
+                                onChange={(e) => setEndDate(e.target.value)}
+                                className="w-full h-11 px-3.5 rounded-xl bg-black/[0.04] dark:bg-white/[0.06] text-[15px] text-neutral-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#007AFF]/40 [color-scheme:light] dark:[color-scheme:dark]"
+                              />
+                            </div>
+                          </div>
+                          {dateRangeInvalid && (
+                            <p
+                              role="alert"
+                              className="mt-2 text-[13px] text-[#FF3B30] dark:text-[#FF453A]"
+                            >
+                              End date must be on or after the start date.
+                            </p>
+                          )}
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </motion.div>
+                </div>
+              )}
+
+              {/* 5. Daily Allowance Tracking (recurring weekly/monthly, dated one-offs) */}
               <AnimatePresence initial={false}>
-                {cadence !== 'daily' && (
+                {showDailyTracking && (
                   <motion.div
                     key="daily-tracking"
                     initial={{ opacity: 0, y: prefersReducedMotion ? 0 : -6 }}
@@ -994,13 +1257,18 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
                     <p className="mt-1 text-[13px] text-neutral-500 dark:text-neutral-400">
                       {dailyTracking
                         ? `Starts at ≈ ${dailyTrackingPerDay}/day, adjusts as you spend.`
-                        : "Splits what's left of the budget across the remaining days in the cycle."}
+                        : isOneOffKind
+                          ? `Spread across ${allowanceDayCount} ${
+                              allowanceDayCount === 1 ? 'day' : 'days'
+                            }, adjusting as you spend.`
+                          : "Splits what's left of the budget across the remaining days in the cycle."}
                     </p>
                   </motion.div>
                 )}
               </AnimatePresence>
 
-              {/* 6. Reminders (all cadences) */}
+              {/* 6. Reminders (recurring always, one-off only when dated) */}
+              {showReminders && (
               <div>
                 <span className={`${LABEL_CLASS} flex items-center gap-1.5`}>
                   <Bell className="w-3.5 h-3.5" />
@@ -1044,6 +1312,12 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
                     className="mt-1 text-[13px] text-neutral-500 dark:text-neutral-400"
                   >
                     {reminderHelperText}
+                  </p>
+                )}
+
+                {isOneOffKind && (
+                  <p className="mt-1 text-[12px] text-neutral-400 dark:text-neutral-500">
+                    Only sent between the start and end dates.
                   </p>
                 )}
 
@@ -1127,6 +1401,7 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
                   )}
                 </AnimatePresence>
               </div>
+              )}
 
               {/* 7. Currency Selector */}
               <div>
