@@ -41,6 +41,8 @@ interface ExpenseListProps {
   currency: string;
   /** Rolling daily allowance keyed by `YYYY-MM-DD` local date (weekly/monthly daily tracking). */
   dailyAllowances?: Map<string, number> | null;
+  /** One-off budgets have no periods or cycles, so the empty state words it differently. */
+  isOneOff?: boolean;
   onBatchUpdateExpenses: (
     updates: ExpenseUpdateEntry[],
   ) => Promise<void> | void;
@@ -361,6 +363,7 @@ export const ExpenseList: React.FC<ExpenseListProps> = ({
   expenses,
   currency,
   dailyAllowances,
+  isOneOff = false,
   onBatchUpdateExpenses,
   onDeleteExpense,
 }) => {
@@ -481,10 +484,12 @@ export const ExpenseList: React.FC<ExpenseListProps> = ({
           <Receipt className="w-5 h-5" />
         </div>
         <h3 className="text-[15px] font-semibold text-neutral-800 dark:text-neutral-200">
-          No expenses in this period
+          {isOneOff ? 'No expenses yet' : 'No expenses in this period'}
         </h3>
         <p className="text-[13px] text-neutral-400 dark:text-neutral-500 mt-1 max-w-[240px] mx-auto">
-          Add an item above to start tracking your spending for this cycle.
+          {isOneOff
+            ? 'Add an item above to start tracking your spending for this budget.'
+            : 'Add an item above to start tracking your spending for this cycle.'}
         </p>
       </motion.div>
     );

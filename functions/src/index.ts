@@ -90,6 +90,9 @@ async function loadSums(
   ranges: ReminderRanges,
 ): Promise<ReminderSums> {
   if (ranges.kind === 'daily') {
+    // One-off budgets aggregate from the start of time and across their whole
+    // lifetime; recurring budgets use the cycle window.
+    const sumEnd = ranges.sumEnd ?? ranges.cycleEnd;
     const spentBefore =
       ranges.todayStart <= ranges.cycleStart
         ? 0
@@ -98,7 +101,7 @@ async function loadSums(
       uid,
       budgetId,
       ranges.todayStart,
-      ranges.cycleEnd,
+      sumEnd,
     );
     return { spentBefore, spentToday };
   }
@@ -107,7 +110,7 @@ async function loadSums(
     uid,
     budgetId,
     ranges.cycleStart,
-    ranges.cycleEnd,
+    ranges.sumEnd ?? ranges.cycleEnd,
   );
   return { spentInCycle };
 }

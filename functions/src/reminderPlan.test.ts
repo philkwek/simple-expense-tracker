@@ -7,7 +7,7 @@ import {
   withTimeZone,
   type ParsedBudgetForReminder,
 } from './reminderPlan';
-import { formatCurrency } from '../../src/utils/periodCalculator';
+import { formatCurrency, ONE_OFF_OPEN_END_MS } from '../../src/utils/periodCalculator';
 
 const SINGAPORE = 'Asia/Singapore';
 
@@ -29,6 +29,7 @@ function budget(
     cadence: 'weekly',
     periodStartDay: 1,
     currency: 'SGD',
+    kind: 'recurring',
     dailyTracking: false,
     reminders: {
       enabled: true,
@@ -128,10 +129,85 @@ describe('parseBudgetForReminder', () => {
       cadence: 'monthly',
       periodStartDay: 1,
       currency: 'USD',
+      kind: 'recurring',
       dailyTracking: false,
       nextReminderAt: NOW,
     });
     expect(parsed?.reminders.times).toEqual(['13:00', '20:00']);
+    expect(parsed?.startDate).toBeUndefined();
+    expect(parsed?.endDate).toBeUndefined();
+  });
+
+  it('parses a dated one-off budget', () => {
+    const parsed = parseBudgetForReminder({
+      kind: 'oneOff',
+      startDate: '2026-11-10',
+      endDate: '2026-11-20',
+      reminders: { enabled: true, times: ['13:00'], timeZone: SINGAPORE },
+      nextReminderAt: NOW,
+    });
+
+    expect(parsed).toMatchObject({
+      kind: 'oneOff',
+      startDate: '2026-11-10',
+      endDate: '2026-11-20',
+    });
+  });
+
+  it('returns null for an undated one-off budget', () => {
+    expect(
+      parseBudgetForReminder({
+        kind: 'oneOff',
+        reminders: { enabled: true, times: ['13:00'], timeZone: SINGAPORE },
+        nextReminderAt: NOW,
+      }),
+    ).toBeNull();
+  });
+
+  it('returns null when a one-off budget has malformed or partial dates', () => {
+    const base = {
+      kind: 'oneOff',
+      reminders: { enabled: true, times: ['13:00'], timeZone: SINGAPORE },
+      nextReminderAt: NOW,
+    };
+    expect(
+      parseBudgetForReminder({
+        ...base,
+        startDate: '2026-13-01',
+        endDate: '2026-11-20',
+      }),
+    ).toBeNull();
+    expect(
+      parseBudgetForReminder({ ...base, startDate: '2026-11-10' }),
+    ).toBeNull();
+    expect(
+      parseBudgetForReminder({
+        ...base,
+        startDate: 'not-a-date',
+        endDate: '2026-11-20',
+      }),
+    ).toBeNull();
+    expect(
+      parseBudgetForReminder({
+        ...base,
+        startDate: '2026-02-30',
+        endDate: '2026-11-20',
+      }),
+    ).toBeNull();
+  });
+
+  it('ignores dates on recurring budgets', () => {
+    const parsed = parseBudgetForReminder({
+      kind: 'recurring',
+      startDate: '2026-11-10',
+      endDate: '2026-11-20',
+      reminders: { enabled: true, times: ['13:00'], timeZone: SINGAPORE },
+      nextReminderAt: NOW,
+    });
+
+    expect(parsed?.kind).toBe('recurring');
+    expect(parsed?.startDate).toBeUndefined();
+    expect(parsed?.endDate).toBeUndefined();
   });
 
   it('keeps valid values and defaults a daily cutoff to midnight', () => {
@@ -203,6 +279,74 @@ describe('planBudgetReminder', () => {
   });
 });
 
+describe('planBudgetReminder for one-off budgets', () => {
+  it('steps to the next slot while inside the date range', () => {
+    const b = budget({
+      kind: 'oneOff',
+      startDate: '2026-11-09',
+      endDate: '2026-11-11',
+      nextReminderAt: NOW, // Wed Nov 11 10:00 Singapore
+    });
+    const plan = planBudgetReminder(b, NOW);
+    expect(plan.nextReminderAt).toBe(Date.UTC(2026, 10, 11, 5, 0)); // Nov 11 13:00
+  });
+
+  it('returns null after the last slot on the end date', () => {
+    const b = budget({
+      kind: 'oneOff',
+      startDate: '2026-11-09',
+      endDate: '2026-11-11',
+      nextReminderAt: Date.UTC(2026, 10, 11, 12, 0), // Nov 11 20:00
+    });
+    const plan = planBudgetReminder(b, Date.UTC(2026, 10, 11, 12, 30));
+    expect(plan.nextReminderAt).toBeNull();
+  });
+
+  it('starts on the start date when the stored slot is weeks earlier', () => {
+    const b = budget({
+      kind: 'oneOff',
+      startDate: '2026-11-20',
+      endDate: '2026-11-25',
+      nextReminderAt: NOW, // Wed Nov 11
+    });
+    const plan = planBudgetReminder(b, NOW);
+    expect(plan.nextReminderAt).toBe(Date.UTC(2026, 10, 20, 5, 0)); // Nov 20 13:00
+  });
+
+  it('starts spending at 0 and keeps the window end as the label bound', () => {
+    const b = budget({
+      kind: 'oneOff',
+      startDate: '2026-11-10',
+      endDate: '2026-11-20',
+      name: 'Trip',
+      amount: 300,
+    });
+    const plan = planBudgetReminder(b, NOW);
+
+    expect(plan.ranges.kind).toBe('cycle');
+    if (plan.ranges.kind !== 'cycle') throw new Error('expected cycle ranges');
+    expect(plan.ranges.cycleStart).toBe(0);
+    expect(plan.ranges.cycleEnd).toBe(Date.UTC(2026, 10, 20, 16, 0)); // Nov 21 00:00
+    expect(plan.ranges.sumEnd).toBe(ONE_OFF_OPEN_END_MS);
+  });
+
+  it('uses today midnight and the full sum range for a daily-tracking one-off', () => {
+    const b = budget({
+      kind: 'oneOff',
+      startDate: '2026-11-10',
+      endDate: '2026-11-20',
+      dailyTracking: true,
+    });
+    const plan = planBudgetReminder(b, NOW);
+
+    expect(plan.ranges.kind).toBe('daily');
+    if (plan.ranges.kind !== 'daily') throw new Error('expected daily ranges');
+    expect(plan.ranges.cycleStart).toBe(0);
+    expect(plan.ranges.todayStart).toBe(TODAY_START);
+    expect(plan.ranges.sumEnd).toBe(ONE_OFF_OPEN_END_MS);
+  });
+});
+
 describe('buildMessageFromSums', () => {
   it('builds the rolling daily message for a weekly budget with daily tracking', () => {
     const b = budget({ dailyTracking: true });
@@ -268,6 +412,63 @@ describe('buildMessageFromSums', () => {
     );
     expect(message.body).toBe(
       `You have ${formatCurrency(38, 'SGD')} remaining in your budget today. Anything to log?`,
+    );
+  });
+
+  it('counts pre-start spending for a daily-tracking one-off', () => {
+    const b = budget({
+      name: 'Trip',
+      amount: 100,
+      kind: 'oneOff',
+      startDate: '2026-11-10',
+      endDate: '2026-11-20',
+      dailyTracking: true,
+    });
+    const plan = planBudgetReminder(b, NOW);
+    expect(plan.ranges.kind).toBe('daily');
+
+    // 30 spent before today (including before the start date), 5 today.
+    // (100 - 30) / 10 days left including today = 7 allowance, minus 5 = 2.
+    const message = buildMessageFromSums(
+      b,
+      plan.ranges,
+      { spentBefore: 30, spentToday: 5 },
+      NOW,
+    );
+    expect(message.body).toBe(
+      `You have ${formatCurrency(2, 'SGD')} remaining in your budget today. Anything to log?`,
+    );
+  });
+
+  it('uses the last-day label and one-off over-budget wording', () => {
+    const b = budget({
+      name: 'Trip',
+      amount: 100,
+      kind: 'oneOff',
+      startDate: '2026-11-10',
+      endDate: '2026-11-20',
+    });
+    const plan = planBudgetReminder(b, NOW);
+    expect(plan.ranges.kind).toBe('cycle');
+
+    const under = buildMessageFromSums(
+      b,
+      plan.ranges,
+      { spentInCycle: 40 },
+      NOW,
+    );
+    expect(under.body).toBe(
+      `${formatCurrency(60, 'SGD')} left until Nov 20. Anything to log?`,
+    );
+
+    const over = buildMessageFromSums(
+      b,
+      plan.ranges,
+      { spentInCycle: 130 },
+      NOW,
+    );
+    expect(over.body).toBe(
+      `${formatCurrency(30, 'SGD')} over budget. Anything to log?`,
     );
   });
 });

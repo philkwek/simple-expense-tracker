@@ -185,6 +185,88 @@ describe('computeNextReminderAt', () => {
   });
 });
 
+describe('computeNextReminderAt with a date range', () => {
+  const DATE_RANGE = { startDate: '2026-11-10', endDate: '2026-11-20' };
+
+  it('finds the first slot on the start date when afterMs is weeks earlier', () => {
+    const reminder = reminders(['13:00', '20:00']);
+    const weeksAhead = Date.UTC(2026, 9, 1, 0, 0); // Oct 1
+    expect(computeNextReminderAt(reminder, weeksAhead, DATE_RANGE)).toBe(
+      Date.UTC(2026, 10, 10, 5, 0), // Nov 10 13:00 Singapore
+    );
+  });
+
+  it('picks the next slot while inside the range', () => {
+    const reminder = reminders(['13:00', '20:00']);
+    const after10am = Date.UTC(2026, 10, 11, 2, 0); // Nov 11 10:00 local
+    expect(computeNextReminderAt(reminder, after10am, DATE_RANGE)).toBe(
+      Date.UTC(2026, 10, 11, 5, 0),
+    );
+  });
+
+  it('returns the last slot of the final day, then null once it has passed', () => {
+    const reminder = reminders(['13:00', '20:00']);
+    const lastDayAfternoon = Date.UTC(2026, 10, 20, 6, 0); // Nov 20 14:00 local
+    expect(
+      computeNextReminderAt(reminder, lastDayAfternoon, DATE_RANGE),
+    ).toBe(Date.UTC(2026, 10, 20, 12, 0)); // Nov 20 20:00 local
+
+    const afterLastSlot = Date.UTC(2026, 10, 20, 12, 0);
+    expect(
+      computeNextReminderAt(reminder, afterLastSlot, DATE_RANGE),
+    ).toBeNull();
+  });
+
+  it('returns null when afterMs is after the range', () => {
+    const reminder = reminders(['13:00', '20:00']);
+    const afterEnd = Date.UTC(2026, 10, 25, 0, 0);
+    expect(computeNextReminderAt(reminder, afterEnd, DATE_RANGE)).toBeNull();
+  });
+
+  it('stays DST-safe across a range that includes the fall-back change', () => {
+    const reminder = reminders(['20:00'], NEW_YORK);
+    const range = { startDate: '2026-10-31', endDate: '2026-11-02' };
+
+    const beforeFirst = Date.UTC(2026, 9, 31, 23, 0); // Oct 31 19:00 EDT
+    const first = computeNextReminderAt(reminder, beforeFirst, range);
+    expect(first).toBe(Date.UTC(2026, 10, 1, 0, 0)); // Oct 31 20:00 EDT
+
+    const second = computeNextReminderAt(reminder, first as number, range);
+    expect(second).toBe(Date.UTC(2026, 10, 2, 1, 0)); // Nov 1 20:00 EST
+
+    const third = computeNextReminderAt(reminder, second as number, range);
+    expect(third).toBe(Date.UTC(2026, 10, 3, 1, 0)); // Nov 2 20:00 EST
+
+    expect(computeNextReminderAt(reminder, third as number, range)).toBeNull();
+  });
+
+  it('interprets dates in a zone different from the test runner', () => {
+    const kolkata = reminders(['09:00'], 'Asia/Kolkata');
+    const range = { startDate: '2026-11-10', endDate: '2026-11-10' };
+    const before = Date.UTC(2026, 10, 9, 0, 0); // Nov 9 05:30 IST
+    expect(computeNextReminderAt(kolkata, before, range)).toBe(
+      Date.UTC(2026, 10, 10, 3, 30), // Nov 10 09:00 IST
+    );
+  });
+
+  it('returns null for malformed or inverted ranges', () => {
+    const reminder = reminders(['13:00']);
+    const after = Date.UTC(2026, 10, 11, 2, 0);
+    expect(
+      computeNextReminderAt(reminder, after, {
+        startDate: '2026-13-01',
+        endDate: '2026-11-20',
+      }),
+    ).toBeNull();
+    expect(
+      computeNextReminderAt(reminder, after, {
+        startDate: '2026-11-20',
+        endDate: '2026-11-10',
+      }),
+    ).toBeNull();
+  });
+});
+
 describe('buildReminderMessage', () => {
   it('builds the under-budget today message', () => {
     const money = formatCurrency(12.5, 'SGD');
@@ -260,6 +342,23 @@ describe('buildReminderMessage', () => {
     ).toEqual({
       title: 'Travel budget reminder',
       body: `${money} over budget this cycle. Anything to log?`,
+    });
+  });
+
+  it('drops "this cycle" from a one-off over-budget message', () => {
+    const money = formatCurrency(7, 'USD');
+    expect(
+      buildReminderMessage({
+        budgetName: 'Trip',
+        currency: 'USD',
+        kind: 'cycle',
+        remaining: -7,
+        cycleLastDayLabel: 'Nov 30',
+        isOneOff: true,
+      }),
+    ).toEqual({
+      title: 'Trip budget reminder',
+      body: `${money} over budget. Anything to log?`,
     });
   });
 

@@ -1,6 +1,8 @@
 import {
   DayExpenseGroup,
   ExpenseItem,
+  hasDateRange,
+  isOneOffBudget,
   PeriodConfig,
   isZeroDecimalCurrency,
   PeriodWindow,
@@ -71,6 +73,18 @@ function formatShortDate(d: Date, includeYear = false): string {
   return includeYear ? `${base}, ${d.getFullYear()}` : base;
 }
 
+/** Open-ended upper bound for undated one-off budgets (the maximum JS date). */
+export const ONE_OFF_OPEN_END_MS = 8_640_000_000_000_000;
+
+/**
+ * Parses a local `YYYY-MM-DD` calendar date into local midnight.
+ * Built with `new Date(y, m - 1, d)` so the result never shifts by a UTC offset.
+ */
+function parseLocalDate(value: string): Date {
+  const [year, month, day] = value.split('-').map(Number);
+  return new Date(year, month - 1, day);
+}
+
 function formatCountdown(now: Date, end: Date, offset: number): string {
   if (offset < 0) {
     return offset === -1 ? 'Previous cycle' : `${Math.abs(offset)} cycles ago`;
@@ -109,6 +123,69 @@ export function calculatePeriodWindow(
   cycleOffset = 0,
 ): PeriodWindow {
   const { cadence } = settings;
+
+  if (isOneOffBudget(settings)) {
+    // One-off budgets never reset: cadence and cycleOffset have no effect.
+    if (hasDateRange(settings)) {
+      const start = parseLocalDate(settings.startDate!);
+      const lastDay = parseLocalDate(settings.endDate!);
+      const end = new Date(
+        lastDay.getFullYear(),
+        lastDay.getMonth(),
+        lastDay.getDate() + 1,
+      );
+
+      const includeYear =
+        start.getFullYear() !== now.getFullYear() ||
+        lastDay.getFullYear() !== now.getFullYear();
+      const isSingleDay = start.getTime() === lastDay.getTime();
+      const label = isSingleDay
+        ? formatShortDate(start, start.getFullYear() !== now.getFullYear())
+        : `${formatShortDate(start)} – ${formatShortDate(lastDay, includeYear)}`;
+
+      const nowDay = localDayNumber(now);
+      const startDay = localDayNumber(start);
+      const lastDayNumber = localDayNumber(lastDay);
+
+      let status: 'upcoming' | 'active' | 'ended';
+      let countdownLabel: string;
+      if (now.getTime() < start.getTime()) {
+        status = 'upcoming';
+        const daysUntil = startDay - nowDay;
+        countdownLabel =
+          daysUntil === 1 ? 'Starts tomorrow' : `Starts in ${daysUntil} days`;
+      } else if (now.getTime() >= end.getTime()) {
+        status = 'ended';
+        countdownLabel = 'Ended';
+      } else {
+        status = 'active';
+        const daysLeft = lastDayNumber - nowDay + 1;
+        countdownLabel = daysLeft === 1 ? 'Last day' : `${daysLeft} days left`;
+      }
+
+      return {
+        start,
+        end,
+        label,
+        countdownLabel,
+        cadenceLabel: 'One-off',
+        isCurrent: true,
+        offset: 0,
+        oneOff: { dated: true, status },
+      };
+    }
+
+    return {
+      start: new Date(0),
+      end: new Date(ONE_OFF_OPEN_END_MS),
+      label: 'No end date',
+      countdownLabel: 'Ongoing',
+      cadenceLabel: 'One-off',
+      isCurrent: true,
+      offset: 0,
+      oneOff: { dated: false, status: 'active' },
+    };
+  }
 
   if (cadence === 'daily') {
     const cutoffHour = Math.max(
@@ -279,6 +356,22 @@ export function calculatePeriodWindow(
 }
 
 /**
+ * Returns the range of expenses that count toward a budget.
+ *
+ * One-off budgets count every expense logged to them, regardless of date, so the
+ * range is open-ended. Recurring budgets use the calculated period window.
+ */
+export function getExpenseQueryRange(
+  settings: PeriodConfig,
+  window: PeriodWindow,
+): { start: Date; end: Date } {
+  if (isOneOffBudget(settings)) {
+    return { start: new Date(0), end: new Date(ONE_OFF_OPEN_END_MS) };
+  }
+  return { start: window.start, end: window.end };
+}
+
+/**
  * Formats a numeric value in the user's selected currency with tabular precision.
  */
 export function formatCurrency(amount: number, currency = 'USD'): string {
@@ -395,23 +488,33 @@ export function getCycleDayCount(window: PeriodWindow): number {
  *
  * Expenses outside `[start, end)` are ignored. Runs in O(days + expenses).
  * Negative or non-finite amounts are treated as 0.
+ *
+ * With `countEarlierSpending`, expenses timestamped before `window.start` count as
+ * already spent on day 1 (e.g. pre-booked flights for a dated one-off budget).
  */
 export function computeDailyAllowances(
   amount: number,
   window: PeriodWindow,
   expenses: ExpenseItem[],
+  options?: { countEarlierSpending?: boolean },
 ): Map<string, number> {
   const safeAmount = sanitizeBudgetAmount(amount);
   const dayCount = getCycleDayCount(window);
   const startTime = window.start.getTime();
   const endTime = window.end.getTime();
+  const countEarlierSpending = options?.countEarlierSpending === true;
 
   const spentByDayKey = new Map<string, number>();
+  let spentBeforeStart = 0;
   for (const expense of expenses) {
     if (!Number.isFinite(expense.timestamp) || !Number.isFinite(expense.amount)) {
       continue;
     }
-    if (expense.timestamp < startTime || expense.timestamp >= endTime) {
+    if (expense.timestamp >= endTime) {
+      continue;
+    }
+    if (expense.timestamp < startTime) {
+      if (countEarlierSpending) spentBeforeStart += expense.amount;
       continue;
     }
     const key = toLocalDateKey(new Date(expense.timestamp));
@@ -422,7 +525,7 @@ export function computeDailyAllowances(
   const startYear = window.start.getFullYear();
   const startMonth = window.start.getMonth();
   const startDate = window.start.getDate();
-  let spentBefore = 0;
+  let spentBefore = spentBeforeStart;
 
   for (let i = 0; i < dayCount; i += 1) {
     const day = new Date(startYear, startMonth, startDate + i);
@@ -441,12 +544,16 @@ export function computeDailyAllowances(
  * Returns `null` when `now` falls outside `[start, end)`. Otherwise reports today's
  * allowance (from {@link computeDailyAllowances}), today's spending, what is left of
  * today's allowance (may be negative), and what is left of the whole cycle (may be negative).
+ *
+ * `options.countEarlierSpending` mirrors {@link computeDailyAllowances}: spending before
+ * `window.start` also reduces `cycleRemaining`.
  */
 export function getDailyAllowanceSummary(
   amount: number,
   window: PeriodWindow,
   expenses: ExpenseItem[],
   now: Date = new Date(),
+  options?: { countEarlierSpending?: boolean },
 ): {
   allowance: number;
   spentToday: number;
@@ -462,9 +569,10 @@ export function getDailyAllowanceSummary(
   }
 
   const safeAmount = sanitizeBudgetAmount(amount);
-  const allowances = computeDailyAllowances(amount, window, expenses);
+  const allowances = computeDailyAllowances(amount, window, expenses, options);
   const todayKey = toLocalDateKey(now);
   const allowance = allowances.get(todayKey) ?? 0;
+  const countEarlierSpending = options?.countEarlierSpending === true;
 
   let spentToday = 0;
   let spentInWindow = 0;
@@ -472,7 +580,11 @@ export function getDailyAllowanceSummary(
     if (!Number.isFinite(expense.timestamp) || !Number.isFinite(expense.amount)) {
       continue;
     }
-    if (expense.timestamp < startTime || expense.timestamp >= endTime) {
+    if (expense.timestamp >= endTime) {
+      continue;
+    }
+    if (expense.timestamp < startTime) {
+      if (countEarlierSpending) spentInWindow += expense.amount;
       continue;
     }
     spentInWindow += expense.amount;

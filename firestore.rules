@@ -18,6 +18,10 @@ rules_version = '2';
 // Collection: users/{userId}/budgets/{budgetId}
 // Document ID: Auto-generated, or 'default' for the budget migrated from 'preference' (<= 128 chars)
 // Fields:
+//   - kind: string (optional, enum: 'recurring' | 'oneOff', missing = 'recurring',
+//           immutable on update) - Whether the budget resets every cycle or runs once
+//   - startDate, endDate: string (optional, 'YYYY-MM-DD', both or neither, one-off only)
+//           - Inclusive local first and last day of a dated one-off budget
 //   - name: string (required, 1 <= size <= 40) - Display name, e.g. "Groceries"
 //   - amount: number (required, 0 <= amount <= 100,000,000) - Periodic spending allowance
 //   - cadence: string (required, enum: 'daily' | 'weekly' | 'monthly') - Reset cycle cadence
@@ -123,7 +127,7 @@ service cloud.firestore {
     }
 
     function isValidBudget(data) {
-      return hasOnlyAllowedFields(['name', 'amount', 'cadence', 'periodStartDay', 'currency', 'dailyTracking', 'reminders', 'nextReminderAt', 'sortOrder', 'createdAt', 'updatedAt']) &&
+      return hasOnlyAllowedFields(['kind', 'startDate', 'endDate', 'name', 'amount', 'cadence', 'periodStartDay', 'currency', 'dailyTracking', 'reminders', 'nextReminderAt', 'sortOrder', 'createdAt', 'updatedAt']) &&
              hasRequiredFields(['name', 'amount', 'cadence', 'periodStartDay', 'currency', 'sortOrder', 'createdAt']) &&
              validStringLength('name', 1, 40) &&
              isValidNumberInRange(data.amount, 0, 100000000) &&
@@ -133,6 +137,8 @@ service cloud.firestore {
              data.periodStartDay >= 0 &&
              data.periodStartDay <= 31 &&
              validStringLength('currency', 3, 3) &&
+             (!('kind' in data) || (data.kind is string && data.kind in ['recurring', 'oneOff'])) &&
+             isValidBudgetDates(data) &&
              (!('dailyTracking' in data) || data.dailyTracking is bool) &&
              (!('reminders' in data) || isValidReminders(data.reminders)) &&
              (!('nextReminderAt' in data) || ((data.nextReminderAt is int || data.nextReminderAt is float) && data.nextReminderAt >= 0)) &&
@@ -140,6 +146,16 @@ service cloud.firestore {
              data.sortOrder >= 0 &&
              isValidTimeValue(data.createdAt) &&
              (!('updatedAt' in data) || isValidTimeValue(data.updatedAt));
+    }
+
+    // One-off budgets may carry an inclusive [startDate, endDate] pair of 'YYYY-MM-DD' strings
+    function isValidBudgetDates(data) {
+      return (!('startDate' in data) && !('endDate' in data)) ||
+             ('startDate' in data && 'endDate' in data &&
+              data.get('kind', 'recurring') == 'oneOff' &&
+              data.startDate is string && data.startDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$') &&
+              data.endDate is string && data.endDate.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$') &&
+              data.startDate <= data.endDate);
     }
 
     // Push reminder settings attached to a budget
@@ -197,7 +213,8 @@ service cloud.firestore {
                          isValidBudget(request.resource.data);
         allow update: if isOwner(userId) &&
                          isValidBudget(request.resource.data) &&
-                         areImmutableFieldsUnchanged(['createdAt']);
+                         areImmutableFieldsUnchanged(['createdAt']) &&
+                         request.resource.data.get('kind', 'recurring') == resource.data.get('kind', 'recurring');
         allow delete: if isOwner(userId);
       }
 

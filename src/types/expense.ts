@@ -19,11 +19,26 @@ export interface UserSettings {
   updatedAt?: number;
 }
 
+/**
+ * - recurring: resets every cycle per `cadence`/`periodStartDay`
+ * - oneOff: a single budget with no resets, optionally bounded by `startDate`/`endDate`
+ */
+export type BudgetKind = 'recurring' | 'oneOff';
+
 /** The fields that decide how a budget's period window is calculated. */
-export type PeriodConfig = Pick<UserSettings, 'cadence' | 'periodStartDay'>;
+export type PeriodConfig = Pick<UserSettings, 'cadence' | 'periodStartDay'> &
+  Pick<BudgetInput, 'kind' | 'startDate' | 'endDate'>;
 
 /** Editable fields of a budget, as entered in the budget editor. */
 export interface BudgetInput {
+  /** Absent on budgets created before one-off budgets existed: treat as 'recurring'. Locked after creation. */
+  kind?: BudgetKind;
+  /**
+   * One-off only: first and last day of the budget, inclusive, as local dates "YYYY-MM-DD".
+   * Both set (dated one-off) or both absent (undated one-off). Always absent on recurring budgets.
+   */
+  startDate?: string;
+  endDate?: string;
   name: string;
   /** Spending allowance per period */
   amount: number;
@@ -47,6 +62,18 @@ export interface BudgetReminders {
   times: string[];
   /** IANA time zone the times are in, e.g. "Asia/Singapore" (taken from the device on save) */
   timeZone: string;
+}
+
+/** True when `budget` is a one-off budget (missing `kind` means recurring). */
+export function isOneOffBudget(budget: Pick<BudgetInput, 'kind'>): boolean {
+  return budget.kind === 'oneOff';
+}
+
+/** True for a one-off budget with a start and end date. */
+export function hasDateRange(
+  budget: Pick<BudgetInput, 'kind' | 'startDate' | 'endDate'>,
+): boolean {
+  return isOneOffBudget(budget) && !!budget.startDate && !!budget.endDate;
 }
 
 export const REMINDER_MAX_TIMES = 4;
@@ -102,6 +129,12 @@ export interface PeriodWindow {
   isCurrent: boolean;
   /** 0 = current active period, -1 = previous period, etc. */
   offset: number;
+  /** Present only for one-off budgets. */
+  oneOff?: {
+    dated: boolean;
+    /** dated: relative to startDate/endDate; undated: always 'active' */
+    status: 'upcoming' | 'active' | 'ended';
+  };
 }
 
 export interface DayExpenseGroup {

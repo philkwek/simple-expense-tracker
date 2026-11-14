@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { Plus } from 'lucide-react';
 import { Budget } from '../types/expense';
+import { calculatePeriodWindow } from '../utils/periodCalculator';
 import { getSpringTransition } from '../lib/motion';
 
 export interface BudgetSwitcherProps {
@@ -147,6 +148,8 @@ export const BudgetSwitcher: React.FC<BudgetSwitcherProps> = ({
             <>
               {budgets.map((budget, index) => {
                 const isActive = budget.id === activeBudgetId;
+                const isEnded =
+                  calculatePeriodWindow(budget).oneOff?.status === 'ended';
                 return (
                   <button
                     key={budget.id}
@@ -155,6 +158,7 @@ export const BudgetSwitcher: React.FC<BudgetSwitcherProps> = ({
                     }}
                     type="button"
                     aria-pressed={isActive}
+                    aria-label={isEnded ? `${budget.name} (ended)` : undefined}
                     onClick={() => onSelectBudget(budget.id)}
                     onKeyDown={(event) => handleChipKeyDown(event, index)}
                     className={`${CHIP_BASE} ${
@@ -171,9 +175,24 @@ export const BudgetSwitcher: React.FC<BudgetSwitcherProps> = ({
                         className="absolute inset-0 rounded-full bg-neutral-900 shadow-[0_1px_2px_rgba(0,0,0,0.16)] dark:bg-white"
                       />
                     )}
-                    <span className="relative max-w-[168px] truncate">
+                    <span
+                      className={`relative max-w-[168px] truncate ${
+                        isEnded ? 'opacity-60' : ''
+                      }`}
+                    >
                       {budget.name}
                     </span>
+                    {isEnded && (
+                      <span
+                        className={`relative ml-1 text-[11px] font-medium ${
+                          isActive
+                            ? 'text-white/70 dark:text-neutral-900/60'
+                            : 'text-neutral-400 dark:text-neutral-500'
+                        }`}
+                      >
+                        Ended
+                      </span>
+                    )}
                   </button>
                 );
               })}
