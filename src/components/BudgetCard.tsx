@@ -25,6 +25,12 @@ interface BudgetCardProps {
     spentToday: number;
     remainingToday: number;
   } | null;
+  /** Dated one-off with daily tracking that hasn't started: day one's planned allowance. */
+  upcomingAllowance?: {
+    perDay: number;
+    /** e.g. "Dec 20" */
+    startLabel: string;
+  } | null;
   onPrevPeriod: () => void;
   onNextPeriod: () => void;
   onResetPeriod: () => void;
@@ -59,6 +65,7 @@ export const BudgetCard: React.FC<BudgetCardProps> = ({
   period,
   periodOffset,
   todayAllowance,
+  upcomingAllowance,
   onPrevPeriod,
   onNextPeriod,
   onResetPeriod,
@@ -289,6 +296,25 @@ export const BudgetCard: React.FC<BudgetCardProps> = ({
               {formatCurrency(safeBudget, currency)}
             </div>
           </div>
+
+          {/* Planned Daily Allowance Tile (dated one-off that hasn't started yet) */}
+          {!todayAllowance && upcomingAllowance && (
+            <div className="col-span-2 rounded-2xl bg-white/90 dark:bg-neutral-900/80 px-3.5 py-2.5 border border-black/[0.055] dark:border-white/[0.08] shadow-[0_1px_2px_rgba(0,0,0,0.03)]">
+              <div className="flex items-end justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-[11px] font-medium uppercase tracking-[0.05em] text-neutral-400 dark:text-neutral-500">
+                    Daily Allowance
+                  </div>
+                  <div className="text-[16px] font-semibold tabular-nums tracking-tight mt-0.5 text-neutral-800 dark:text-neutral-100">
+                    {formatCurrency(upcomingAllowance.perDay, currency)}
+                  </div>
+                </div>
+                <div className="text-right text-[12px] font-medium tabular-nums text-neutral-400 dark:text-neutral-500 pb-0.5">
+                  per day from {upcomingAllowance.startLabel}
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Rolling Daily Allowance Tile (weekly/monthly daily tracking) */}
           {todayAllowance && (

@@ -16,6 +16,7 @@ import {
   computeDailyAllowances,
   getDailyAllowanceSummary,
   getExpenseQueryRange,
+  toLocalDateKey,
 } from './utils/periodCalculator';
 import { subscribeToAuth } from './services/authService';
 import {
@@ -241,6 +242,19 @@ export function App() {
     ],
   );
 
+  // A dated one-off that hasn't started has no "today" yet: preview day one's allowance
+  // (already reduced by anything spent before the start, e.g. pre-booked flights).
+  const upcomingAllowance = useMemo(() => {
+    if (!dailyAllowances || periodWindow.oneOff?.status !== 'upcoming') return null;
+    return {
+      perDay: dailyAllowances.get(toLocalDateKey(periodWindow.start)) ?? 0,
+      startLabel: periodWindow.start.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+      }),
+    };
+  }, [dailyAllowances, periodWindow]);
+
   const handleAddExpense = async (input: CreateExpenseInput) => {
     await addExpense(user.uid, { ...input, budgetId: activeBudget.id });
     // If the user logged an expense while viewing a past period, jump back to current period if the expense is for now
@@ -389,6 +403,7 @@ export function App() {
             period={periodWindow}
             periodOffset={periodOffset}
             todayAllowance={todayAllowance}
+            upcomingAllowance={upcomingAllowance}
             onPrevPeriod={() => setPeriodOffset((prev) => prev - 1)}
             onNextPeriod={() =>
               setPeriodOffset((prev) => Math.min(0, prev + 1))
