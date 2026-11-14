@@ -165,7 +165,12 @@ function budgetDocFields(budget: BudgetDocLike, now: number) {
   const createdAt = normalizeTime(budget.createdAt, now);
   const reminders = normalizeBudgetReminders(budget.reminders);
   const nextReminderAt = computeNextReminderAt(reminders, now);
+  const isOneOff = budget.kind === 'oneOff';
+  const hasDates =
+    isOneOff && typeof budget.startDate === 'string' && typeof budget.endDate === 'string';
   return {
+    kind: isOneOff ? 'oneOff' : 'recurring',
+    ...(hasDates ? { startDate: budget.startDate, endDate: budget.endDate } : {}),
     name: budget.name,
     amount:
       typeof budget.amount === 'number' && Number.isFinite(budget.amount)

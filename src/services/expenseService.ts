@@ -20,6 +20,7 @@ import {
   Budget,
   BUDGET_NAME_MAX_LENGTH,
   BudgetInput,
+  BudgetKind,
   BudgetReminders,
   DEFAULT_BUDGET_ID,
   DEFAULT_USER_SETTINGS,
@@ -93,9 +94,35 @@ function clampPeriodStartDay(cadence: Budget['cadence'], day: number): number {
   return Math.max(1, Math.min(31, d));
 }
 
+const DATE_KEY_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+/** True for a real calendar date written as "YYYY-MM-DD". */
+function isValidDateKey(val: unknown): val is string {
+  if (typeof val !== 'string' || !DATE_KEY_PATTERN.test(val)) return false;
+  const [y, m, d] = val.split('-').map(Number);
+  const date = new Date(y, m - 1, d);
+  return date.getFullYear() === y && date.getMonth() === m - 1 && date.getDate() === d;
+}
+
 export function normalizeBudgetInput(input: BudgetInput): BudgetInput {
   const cadence = isCadence(input.cadence) ? input.cadence : 'monthly';
+  const kind: BudgetKind = input.kind === 'oneOff' ? 'oneOff' : 'recurring';
+
+  // One-off dates come as a pair; a lone or invalid date makes the budget undated.
+  let startDate: string | undefined;
+  let endDate: string | undefined;
+  if (kind === 'oneOff' && isValidDateKey(input.startDate) && isValidDateKey(input.endDate)) {
+    // "YYYY-MM-DD" strings sort chronologically.
+    [startDate, endDate] =
+      input.startDate <= input.endDate
+        ? [input.startDate, input.endDate]
+        : [input.endDate, input.startDate];
+  }
+  const isUndatedOneOff = kind === 'oneOff' && !startDate;
+
   const normalized: BudgetInput = {
+    kind,
+    ...(startDate && endDate ? { startDate, endDate } : {}),
     name: input.name.trim().slice(0, BUDGET_NAME_MAX_LENGTH) || 'Budget',
     amount:
       Number.isFinite(input.amount) && input.amount >= 0
@@ -107,10 +134,14 @@ export function normalizeBudgetInput(input: BudgetInput): BudgetInput {
       typeof input.currency === 'string' && input.currency.length === 3
         ? input.currency
         : DEFAULT_USER_SETTINGS.currency,
-    dailyTracking: input.dailyTracking === true && cadence !== 'daily',
+    // Recurring: weekly/monthly only. One-off: needs dates to spread the amount over.
+    dailyTracking:
+      input.dailyTracking === true &&
+      (kind === 'oneOff' ? !isUndatedOneOff : cadence !== 'daily'),
   };
 
-  if (input.reminders) {
+  // Undated one-off budgets have no schedule to remind against.
+  if (input.reminders && !isUndatedOneOff) {
     const times = normalizeReminderTimes(input.reminders.times);
     normalized.reminders = {
       // A reminder without any valid time can never fire, so it stays disabled.
@@ -157,6 +188,9 @@ function parseReminders(value: unknown): BudgetReminders | undefined {
 function parseBudget(id: string, data: Record<string, unknown>): Budget {
   const reminders = parseReminders(data.reminders);
   const base = normalizeBudgetInput({
+    kind: data.kind === 'oneOff' ? 'oneOff' : 'recurring',
+    startDate: typeof data.startDate === 'string' ? data.startDate : undefined,
+    endDate: typeof data.endDate === 'string' ? data.endDate : undefined,
     name: typeof data.name === 'string' ? data.name : 'Budget',
     amount: typeof data.amount === 'number' ? data.amount : 0,
     cadence: isCadence(data.cadence) ? data.cadence : 'monthly',
@@ -205,6 +239,10 @@ function sortBudgets(budgets: Budget[]): Budget[] {
 
 function budgetToDoc(budget: Budget) {
   return {
+    kind: budget.kind === 'oneOff' ? 'oneOff' : 'recurring',
+    ...(budget.startDate && budget.endDate
+      ? { startDate: budget.startDate, endDate: budget.endDate }
+      : {}),
     name: budget.name,
     amount: budget.amount,
     cadence: budget.cadence,
@@ -478,13 +516,25 @@ export async function updateBudget(
   input: BudgetInput,
 ): Promise<void> {
   const now = Date.now();
-  const merged = normalizeBudgetInput(input);
+  // A budget's kind is locked at creation.
+  const merged = normalizeBudgetInput({
+    ...input,
+    kind: budget.kind === 'oneOff' ? 'oneOff' : 'recurring',
+  });
   // `input` may omit reminders, in which case the budget's existing reminders
   // stay in place; nextReminderAt is always recomputed from the merged result.
-  const next = setNextReminderAt(
-    { ...budget, ...merged, updatedAt: now },
-    now,
-  );
+  const combined: Budget = {
+    ...budget,
+    ...merged,
+    // Dates come only from the new input, so clearing them sticks.
+    startDate: merged.startDate,
+    endDate: merged.endDate,
+    updatedAt: now,
+  };
+  if (!combined.startDate) delete combined.startDate;
+  if (!combined.endDate) delete combined.endDate;
+  if (combined.kind === 'oneOff' && !combined.startDate) delete combined.reminders;
+  const next = setNextReminderAt(combined, now);
 
   if (isLocalMode(userId)) {
     writeLocalBudgets(
