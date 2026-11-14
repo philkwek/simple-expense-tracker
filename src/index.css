@@ -29,6 +29,21 @@
   textarea {
     font-size: max(16px, 1rem);
   }
+
+  /* iOS Safari gives date/time inputs a native intrinsic min-width that ignores
+     `width: 100%`, so two side by side in a grid overflow into each other. */
+  input[type="date"],
+  input[type="time"] {
+    min-width: 0;
+    -webkit-appearance: none;
+    appearance: none;
+  }
+
+  /* With appearance reset, iOS centers the value — keep it left-aligned. */
+  input[type="date"]::-webkit-date-and-time-value,
+  input[type="time"]::-webkit-date-and-time-value {
+    text-align: left;
+  }
 }
 
 @layer components {

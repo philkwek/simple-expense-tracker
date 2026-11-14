@@ -302,7 +302,7 @@ export const ExpenseInputForm: React.FC<ExpenseInputFormProps> = ({
                 </button>
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-2">
                 {/* Date Picker (Required when custom) */}
                 <div className="relative flex items-center">
                   <Calendar className="w-4 h-4 text-neutral-400 absolute left-3 pointer-events-none" />
