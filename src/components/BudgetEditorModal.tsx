@@ -843,7 +843,7 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
             {/* Header */}
             <div className="flex items-center justify-between mb-5 gap-3">
               <div className="flex items-center gap-2.5 min-w-0">
-                <div className="w-9 h-9 shrink-0 rounded-2xl bg-[#007AFF]/12 dark:bg-[#0A84FF]/20 text-[#007AFF] dark:text-[#0A84FF] flex items-center justify-center">
+                <div className="w-9 h-9 shrink-0 rounded-2xl bg-[#007AFF]/[0.12] dark:bg-[#0A84FF]/20 text-[#007AFF] dark:text-[#0A84FF] flex items-center justify-center">
                   <HeaderIcon className="w-5 h-5" />
                 </div>
                 <div className="min-w-0">

@@ -225,7 +225,7 @@ export const ExpenseInputForm: React.FC<ExpenseInputFormProps> = ({
           aria-expanded={showCustomDate}
           className={`pressable inline-flex items-center gap-1.5 text-[12px] font-medium rounded-full px-2.5 py-1 transition-colors ${
             showCustomDate
-              ? 'bg-[#007AFF]/12 text-[#007AFF] dark:bg-[#0A84FF]/20 dark:text-[#0A84FF]'
+              ? 'bg-[#007AFF]/[0.12] text-[#007AFF] dark:bg-[#0A84FF]/20 dark:text-[#0A84FF]'
               : 'text-neutral-500 dark:text-neutral-400 hover:bg-black/[0.04] dark:hover:bg-white/[0.06]'
           }`}
         >

@@ -113,10 +113,10 @@ export const BudgetCard: React.FC<BudgetCardProps> = ({
       : 'bg-[#34C759] dark:bg-[#30D158]';
 
   const statusBadgeClass = isOverBudget
-    ? 'bg-[#FF3B30]/12 text-[#FF3B30] dark:bg-[#FF453A]/18 dark:text-[#FF453A]'
+    ? 'bg-[#FF3B30]/[0.12] text-[#FF3B30] dark:bg-[#FF453A]/[0.18] dark:text-[#FF453A]'
     : isWarning
-      ? 'bg-[#FF9500]/12 text-[#D97706] dark:bg-[#FF9F0A]/18 dark:text-[#FF9F0A]'
-      : 'bg-[#34C759]/12 text-[#248A3D] dark:bg-[#30D158]/18 dark:text-[#30D158]';
+      ? 'bg-[#FF9500]/[0.12] text-[#D97706] dark:bg-[#FF9F0A]/[0.18] dark:text-[#FF9F0A]'
+      : 'bg-[#34C759]/[0.12] text-[#248A3D] dark:bg-[#30D158]/[0.18] dark:text-[#30D158]';
 
   const oneOff = period.oneOff;
   const isOneOffEnded = oneOff?.status === 'ended';
@@ -201,7 +201,7 @@ export const BudgetCard: React.FC<BudgetCardProps> = ({
               type="button"
               onClick={onResetPeriod}
               aria-label="Jump to current period"
-              className="pressable inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[12px] font-medium bg-[#007AFF]/12 text-[#007AFF] dark:bg-[#0A84FF]/20 dark:text-[#0A84FF]"
+              className="pressable inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full text-[12px] font-medium bg-[#007AFF]/[0.12] text-[#007AFF] dark:bg-[#0A84FF]/20 dark:text-[#0A84FF]"
             >
               <RotateCcw className="w-3 h-3" />
               <span>Current</span>

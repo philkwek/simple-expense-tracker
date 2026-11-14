@@ -233,7 +233,7 @@ export const AccountModal: React.FC<AccountModalProps> = ({
             {/* Header */}
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2.5">
-                <div className="w-9 h-9 rounded-2xl bg-[#007AFF]/12 dark:bg-[#0A84FF]/20 text-[#007AFF] dark:text-[#0A84FF] flex items-center justify-center">
+                <div className="w-9 h-9 rounded-2xl bg-[#007AFF]/[0.12] dark:bg-[#0A84FF]/20 text-[#007AFF] dark:text-[#0A84FF] flex items-center justify-center">
                   <Cloud className="w-5 h-5" />
                 </div>
                 <div>
@@ -412,7 +412,7 @@ export const AccountModal: React.FC<AccountModalProps> = ({
                   {successMsg && (
                     <div
                       role="status"
-                      className="rounded-xl bg-[#34C759]/12 text-[#248A3D] dark:text-[#30D158] px-3 py-2 text-[13px] font-medium flex items-center gap-1.5"
+                      className="rounded-xl bg-[#34C759]/[0.12] text-[#248A3D] dark:text-[#30D158] px-3 py-2 text-[13px] font-medium flex items-center gap-1.5"
                     >
                       <CheckCircle2 className="w-4 h-4 shrink-0" />
                       <span>{successMsg}</span>
@@ -445,7 +445,7 @@ export const AccountModal: React.FC<AccountModalProps> = ({
                       {user.email}
                     </div>
                   </div>
-                  <div className="w-10 h-10 rounded-full bg-[#007AFF]/12 text-[#007AFF] dark:bg-[#0A84FF]/20 dark:text-[#0A84FF] flex items-center justify-center font-semibold text-[15px] shrink-0">
+                  <div className="w-10 h-10 rounded-full bg-[#007AFF]/[0.12] text-[#007AFF] dark:bg-[#0A84FF]/20 dark:text-[#0A84FF] flex items-center justify-center font-semibold text-[15px] shrink-0">
                     {(user.displayName || user.email || 'U')
                       .charAt(0)
                       .toUpperCase()}
@@ -493,7 +493,7 @@ export const AccountModal: React.FC<AccountModalProps> = ({
                 {successMsg && (
                   <div
                     role="status"
-                    className="rounded-xl bg-[#34C759]/12 text-[#248A3D] dark:text-[#30D158] px-3 py-2 text-[13px] font-medium flex items-center gap-1.5"
+                    className="rounded-xl bg-[#34C759]/[0.12] text-[#248A3D] dark:text-[#30D158] px-3 py-2 text-[13px] font-medium flex items-center gap-1.5"
                   >
                     <CheckCircle2 className="w-4 h-4 shrink-0" />
                     <span>{successMsg}</span>
