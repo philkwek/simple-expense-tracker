@@ -7,6 +7,11 @@ import {
   fromDateAndTimeInputs,
 } from '../utils/periodCalculator';
 import { SPRING_CRITICALLY_DAMPED } from '../lib/motion';
+import {
+  getCurrencyOption,
+  isZeroDecimalCurrency,
+  roundToCurrency,
+} from '../types/expense';
 
 export interface CreateExpenseInput {
   title: string;
@@ -19,16 +24,6 @@ interface ExpenseInputFormProps {
   currency: string;
   onAddExpense: (input: CreateExpenseInput) => Promise<void> | void;
 }
-
-const CURRENCY_SYMBOLS: Record<string, string> = {
-  USD: '$',
-  EUR: '€',
-  GBP: '£',
-  SGD: 'S$',
-  CAD: 'CA$',
-  AUD: 'A$',
-  JPY: '¥',
-};
 
 export const ExpenseInputForm: React.FC<ExpenseInputFormProps> = ({
   currency,
@@ -47,7 +42,8 @@ export const ExpenseInputForm: React.FC<ExpenseInputFormProps> = ({
 
   const titleInputRef = useRef<HTMLInputElement>(null);
 
-  const symbol = CURRENCY_SYMBOLS[currency] || '$';
+  const symbol = getCurrencyOption(currency).symbol;
+  const isWholeUnits = isZeroDecimalCurrency(currency);
 
   const handleToggleCustomDate = () => {
     setShowCustomDate((prev) => {
@@ -95,7 +91,7 @@ export const ExpenseInputForm: React.FC<ExpenseInputFormProps> = ({
   };
 
   const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const raw = e.target.value.replace(/[^0-9.]/g, '');
+    const raw = e.target.value.replace(isWholeUnits ? /[^0-9]/g : /[^0-9.]/g, '');
     const parts = raw.split('.');
     if (parts.length > 2) return;
     if (parts[1] && parts[1].length > 2) return;
@@ -130,7 +126,7 @@ export const ExpenseInputForm: React.FC<ExpenseInputFormProps> = ({
 
       await onAddExpense({
         title: trimmedTitle,
-        amount: Math.round(numericAmount * 100) / 100,
+        amount: roundToCurrency(numericAmount, currency),
         timestamp,
         hasTime: hasSpecificTime,
       });
@@ -184,7 +180,11 @@ export const ExpenseInputForm: React.FC<ExpenseInputFormProps> = ({
           />
         </div>
 
-        <div className="relative w-28 shrink-0">
+        <div
+          className="relative shrink-0"
+          // Widen for multi-character symbols (e.g. NT$, CHF) so digits still fit.
+          style={{ width: `calc(7rem + ${symbol.length - 1}ch)` }}
+        >
           <label htmlFor="expense-amount-input" className="sr-only">
             Cost
           </label>
@@ -198,11 +198,12 @@ export const ExpenseInputForm: React.FC<ExpenseInputFormProps> = ({
             id="expense-amount-input"
             name="amount"
             type="text"
-            inputMode="decimal"
-            placeholder="0.00"
+            inputMode={isWholeUnits ? 'numeric' : 'decimal'}
+            placeholder={isWholeUnits ? '0' : '0.00'}
             value={amountStr}
             onChange={handleAmountChange}
-            className="w-full h-11 pl-7 pr-3 rounded-xl bg-white/90 dark:bg-neutral-900/80 border border-black/[0.055] dark:border-white/[0.08] shadow-[0_1px_2px_rgba(0,0,0,0.03)] text-[16px] font-semibold tabular-nums text-right text-neutral-900 dark:text-white placeholder:text-neutral-400 dark:placeholder:text-neutral-500 focus:outline-none focus:ring-2 focus:ring-[#007AFF]/40 transition-shadow"
+            style={{ paddingLeft: `calc(1.125rem + ${symbol.length}ch)` }}
+            className="w-full h-11 pr-3 rounded-xl bg-white/90 dark:bg-neutral-900/80 border border-black/[0.055] dark:border-white/[0.08] shadow-[0_1px_2px_rgba(0,0,0,0.03)] text-[16px] font-semibold tabular-nums text-right text-neutral-900 dark:text-white placeholder:text-neutral-400 dark:placeholder:text-neutral-500 focus:outline-none focus:ring-2 focus:ring-[#007AFF]/40 transition-shadow"
           />
         </div>
 

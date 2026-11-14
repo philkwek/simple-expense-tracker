@@ -166,6 +166,19 @@ describe('Budget Period Calculator (periodCalculator.ts)', () => {
       expect(formatCurrency(1250, 'JPY')).toBe('¥1,250');
     });
 
+    it('formats KRW, TWD, IDR and VND without decimals, rounding to whole units', () => {
+      expect(formatCurrency(12500.6, 'KRW')).toBe('₩12,501');
+      expect(formatCurrency(350, 'TWD')).toBe('NT$350');
+      expect(formatCurrency(25000, 'IDR')).toBe('IDR\u00a025,000');
+      expect(formatCurrency(45000, 'VND')).toBe('₫45,000');
+    });
+
+    it('keeps two decimals for the other quick-pick currencies', () => {
+      expect(formatCurrency(12.5, 'MYR')).toBe('MYR\u00a012.50');
+      expect(formatCurrency(12.5, 'CNY')).toBe('CN¥12.50');
+      expect(formatCurrency(12.5, 'SGD')).toBe('SGD\u00a012.50');
+    });
+
     it('groups expenses into Today and Yesterday with accurate subtotals', () => {
       const now = new Date(2026, 9, 14, 15, 0, 0);
       const expenses = [
