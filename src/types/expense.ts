@@ -122,7 +122,7 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
   budget: 150,
   cadence: 'monthly',
   periodStartDay: 1,
-  currency: 'USD',
+  currency: 'SGD',
 };
 
 export function legacySettingsToBudget(
@@ -149,11 +149,72 @@ export interface CurrencyOption {
 }
 
 export const SUPPORTED_CURRENCIES: CurrencyOption[] = [
+  // Quick picks, in the order the budget editor shows them as chips.
+  { code: 'SGD', symbol: 'S$', name: 'Singapore Dollar' },
+  { code: 'MYR', symbol: 'RM', name: 'Malaysian Ringgit' },
+  { code: 'TWD', symbol: 'NT$', name: 'New Taiwan Dollar' },
+  { code: 'CNY', symbol: '¥', name: 'Chinese Yuan' },
+  { code: 'KRW', symbol: '₩', name: 'South Korean Won' },
+  // Everything else, listed under "More".
   { code: 'USD', symbol: '$', name: 'US Dollar' },
   { code: 'EUR', symbol: '€', name: 'Euro' },
   { code: 'GBP', symbol: '£', name: 'British Pound' },
-  { code: 'SGD', symbol: 'S$', name: 'Singapore Dollar' },
-  { code: 'CAD', symbol: 'CA$', name: 'Canadian Dollar' },
-  { code: 'AUD', symbol: 'A$', name: 'Australian Dollar' },
   { code: 'JPY', symbol: '¥', name: 'Japanese Yen' },
+  { code: 'HKD', symbol: 'HK$', name: 'Hong Kong Dollar' },
+  { code: 'AUD', symbol: 'A$', name: 'Australian Dollar' },
+  { code: 'NZD', symbol: 'NZ$', name: 'New Zealand Dollar' },
+  { code: 'CAD', symbol: 'CA$', name: 'Canadian Dollar' },
+  { code: 'CHF', symbol: 'CHF', name: 'Swiss Franc' },
+  { code: 'THB', symbol: '฿', name: 'Thai Baht' },
+  { code: 'IDR', symbol: 'Rp', name: 'Indonesian Rupiah' },
+  { code: 'PHP', symbol: '₱', name: 'Philippine Peso' },
+  { code: 'VND', symbol: '₫', name: 'Vietnamese Dong' },
+  { code: 'INR', symbol: '₹', name: 'Indian Rupee' },
 ];
+
+/** Currencies the budget editor shows as quick-pick chips, in display order. */
+export const QUICK_PICK_CURRENCY_CODES: readonly string[] = [
+  'SGD',
+  'MYR',
+  'TWD',
+  'CNY',
+  'KRW',
+];
+
+/**
+ * Currencies whose amounts are entered and shown as whole numbers.
+ * JPY, KRW and VND have no minor unit in practice; TWD and IDR officially have
+ * cents, but everyday prices are quoted without them.
+ */
+const ZERO_DECIMAL_CURRENCIES: ReadonlySet<string> = new Set([
+  'JPY',
+  'KRW',
+  'VND',
+  'TWD',
+  'IDR',
+]);
+
+export function isZeroDecimalCurrency(code: string): boolean {
+  return ZERO_DECIMAL_CURRENCIES.has(code);
+}
+
+/**
+ * Looks up a currency's display details. A code outside the list (e.g. one saved
+ * by an older or newer client) falls back to using the code itself as the symbol.
+ */
+export function getCurrencyOption(code: string): CurrencyOption {
+  return (
+    SUPPORTED_CURRENCIES.find((c) => c.code === code) ?? {
+      code,
+      symbol: code,
+      name: code,
+    }
+  );
+}
+
+/** Rounds an entered amount to the currency's precision (whole units or cents). */
+export function roundToCurrency(amount: number, code: string): number {
+  return isZeroDecimalCurrency(code)
+    ? Math.round(amount)
+    : Math.round(amount * 100) / 100;
+}
