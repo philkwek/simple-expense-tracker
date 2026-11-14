@@ -17,6 +17,7 @@ import {
   Check,
   Trash2,
   Bell,
+  ChevronDown,
 } from 'lucide-react';
 import {
   Budget,
@@ -24,8 +25,12 @@ import {
   BudgetInput,
   BUDGET_NAME_MAX_LENGTH,
   DEFAULT_USER_SETTINGS,
+  QUICK_PICK_CURRENCY_CODES,
   REMINDER_MAX_TIMES,
   SUPPORTED_CURRENCIES,
+  getCurrencyOption,
+  isZeroDecimalCurrency,
+  roundToCurrency,
 } from '../types/expense';
 import {
   calculatePeriodWindow,
@@ -101,6 +106,13 @@ const serializeForm = (form: FormSnapshot): string => JSON.stringify(form);
 const LABEL_CLASS =
   'block text-[12px] font-semibold uppercase tracking-[0.06em] text-neutral-400 dark:text-neutral-500 mb-2';
 
+const CURRENCY_CHIP_CLASS =
+  'pressable py-2 px-2.5 rounded-xl text-[13px] font-semibold flex items-center justify-center gap-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#007AFF]/40';
+const CURRENCY_CHIP_SELECTED_CLASS =
+  'bg-[#007AFF] dark:bg-[#0A84FF] text-white shadow-sm';
+const CURRENCY_CHIP_IDLE_CLASS =
+  'bg-black/[0.04] dark:bg-white/[0.06] text-neutral-700 dark:text-neutral-300';
+
 export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
   isOpen,
   onClose,
@@ -128,6 +140,7 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
   const [currency, setCurrency] = useState<string>(
     DEFAULT_USER_SETTINGS.currency,
   );
+  const [isMoreCurrenciesOpen, setIsMoreCurrenciesOpen] = useState(false);
   const [dailyTracking, setDailyTracking] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -220,6 +233,7 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
         ? budget.currency
         : DEFAULT_USER_SETTINGS.currency;
     setCurrency(initialCurrency);
+    setIsMoreCurrenciesOpen(false);
     const initialDailyTracking =
       mode === 'edit' && budget ? budget.dailyTracking === true : false;
     setDailyTracking(initialDailyTracking);
@@ -503,7 +517,7 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
     const parsedAmount = parseFloat(amountStr);
     const validAmount =
       Number.isFinite(parsedAmount) && parsedAmount >= 0
-        ? Math.round(parsedAmount * 100) / 100
+        ? roundToCurrency(parsedAmount, currency)
         : fallbackAmount;
 
     const hadReminders =
@@ -550,9 +564,14 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
     }
   };
 
-  const selectedCurrencyObj =
-    SUPPORTED_CURRENCIES.find((c) => c.code === currency) ||
-    SUPPORTED_CURRENCIES[0];
+  const selectedCurrencyObj = getCurrencyOption(currency);
+  const isWholeUnitCurrency = isZeroDecimalCurrency(currency);
+  const quickPickCurrencies = QUICK_PICK_CURRENCY_CODES.map(getCurrencyOption);
+  const moreCurrencies = SUPPORTED_CURRENCIES.filter(
+    (c) => !QUICK_PICK_CURRENCY_CODES.includes(c.code),
+  );
+  // Selected currency lives under "More" (or isn't listed at all).
+  const isMoreCurrencySelected = !QUICK_PICK_CURRENCY_CODES.includes(currency);
 
   const title = mode === 'create' ? 'New Budget' : 'Edit Budget';
   const subtitle =
@@ -745,13 +764,17 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
                   <input
                     id="budget-editor-amount"
                     type="text"
-                    inputMode="decimal"
+                    inputMode={isWholeUnitCurrency ? 'numeric' : 'decimal'}
                     value={amountStr}
                     onChange={(e) =>
                       setAmountStr(e.target.value.replace(/[^0-9.]/g, ''))
                     }
-                    placeholder="150.00"
-                    className="w-full h-14 pl-12 pr-4 rounded-2xl bg-black/[0.04] dark:bg-white/[0.06] text-[24px] font-bold tabular-nums tracking-tight text-neutral-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#007AFF]/40"
+                    placeholder={isWholeUnitCurrency ? '15000' : '150.00'}
+                    // Room for multi-character symbols such as NT$ or CHF.
+                    style={{
+                      paddingLeft: `max(3rem, calc(1.5rem + ${selectedCurrencyObj.symbol.length}ch))`,
+                    }}
+                    className="w-full h-14 pr-4 rounded-2xl bg-black/[0.04] dark:bg-white/[0.06] text-[24px] font-bold tabular-nums tracking-tight text-neutral-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-[#007AFF]/40"
                   />
                 </div>
               </div>
@@ -1134,19 +1157,23 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
                   <DollarSign className="w-3.5 h-3.5" />
                   <span>Currency</span>
                 </span>
-                <div className="grid grid-cols-4 gap-1.5">
-                  {SUPPORTED_CURRENCIES.map((c) => {
+                <div className="grid grid-cols-3 gap-1.5">
+                  {quickPickCurrencies.map((c) => {
                     const selected = currency === c.code;
                     return (
                       <button
                         key={c.code}
                         type="button"
-                        onClick={() => setCurrency(c.code)}
+                        onClick={() => {
+                          setCurrency(c.code);
+                          setIsMoreCurrenciesOpen(false);
+                        }}
                         aria-pressed={selected}
-                        className={`pressable py-2 px-2.5 rounded-xl text-[13px] font-semibold flex items-center justify-center gap-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#007AFF]/40 ${
+                        aria-label={`${c.name} (${c.code})`}
+                        className={`${CURRENCY_CHIP_CLASS} ${
                           selected
-                            ? 'bg-[#007AFF] dark:bg-[#0A84FF] text-white shadow-sm'
-                            : 'bg-black/[0.04] dark:bg-white/[0.06] text-neutral-700 dark:text-neutral-300'
+                            ? CURRENCY_CHIP_SELECTED_CLASS
+                            : CURRENCY_CHIP_IDLE_CLASS
                         }`}
                       >
                         <span>{c.code}</span>
@@ -1156,7 +1183,109 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
                       </button>
                     );
                   })}
+                  <button
+                    type="button"
+                    onClick={() => setIsMoreCurrenciesOpen((open) => !open)}
+                    aria-expanded={isMoreCurrenciesOpen}
+                    aria-controls="budget-editor-more-currencies"
+                    aria-label={
+                      isMoreCurrencySelected
+                        ? `More currencies, ${selectedCurrencyObj.name} (${currency}) selected`
+                        : 'More currencies'
+                    }
+                    className={`${CURRENCY_CHIP_CLASS} ${
+                      isMoreCurrencySelected
+                        ? CURRENCY_CHIP_SELECTED_CLASS
+                        : CURRENCY_CHIP_IDLE_CLASS
+                    }`}
+                  >
+                    {isMoreCurrencySelected ? (
+                      <>
+                        <span>{currency}</span>
+                        {selectedCurrencyObj.symbol !== currency && (
+                          <span className="opacity-70 text-[11px]">
+                            {selectedCurrencyObj.symbol}
+                          </span>
+                        )}
+                      </>
+                    ) : (
+                      <span>More</span>
+                    )}
+                    <motion.span
+                      aria-hidden="true"
+                      initial={false}
+                      animate={{ rotate: isMoreCurrenciesOpen ? 180 : 0 }}
+                      transition={springTransition}
+                      className="flex opacity-70"
+                    >
+                      <ChevronDown className="w-3.5 h-3.5" />
+                    </motion.span>
+                  </button>
                 </div>
+
+                <AnimatePresence initial={false}>
+                  {isMoreCurrenciesOpen && (
+                    <motion.div
+                      key="more-currencies"
+                      id="budget-editor-more-currencies"
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: 'auto', opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={springTransition}
+                      className="-mx-1 overflow-hidden"
+                    >
+                      <div
+                        role="group"
+                        aria-label="More currencies"
+                        className="grid grid-cols-2 gap-1.5 px-1 pt-1.5 pb-1"
+                      >
+                        {moreCurrencies.map((c) => {
+                          const selected = currency === c.code;
+                          return (
+                            <button
+                              key={c.code}
+                              type="button"
+                              onClick={() => {
+                                setCurrency(c.code);
+                                setIsMoreCurrenciesOpen(false);
+                              }}
+                              aria-pressed={selected}
+                              aria-label={`${c.name} (${c.code})`}
+                              className={`pressable min-h-11 py-1.5 px-3 rounded-xl flex items-center gap-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#007AFF]/40 ${
+                                selected
+                                  ? CURRENCY_CHIP_SELECTED_CLASS
+                                  : CURRENCY_CHIP_IDLE_CLASS
+                              }`}
+                            >
+                              <span className="min-w-0 flex-1 text-left">
+                                <span className="flex items-baseline gap-1 text-[13px] font-semibold">
+                                  <span>{c.code}</span>
+                                  {c.symbol !== c.code && (
+                                    <span className="opacity-70 text-[11px]">
+                                      {c.symbol}
+                                    </span>
+                                  )}
+                                </span>
+                                <span
+                                  className={`block truncate text-[11px] ${
+                                    selected
+                                      ? 'text-white/80'
+                                      : 'text-neutral-500 dark:text-neutral-400'
+                                  }`}
+                                >
+                                  {c.name}
+                                </span>
+                              </span>
+                              {selected && (
+                                <Check className="w-4 h-4 shrink-0" />
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
 
               {/* Footer: submit + delete, or inline delete confirmation */}
