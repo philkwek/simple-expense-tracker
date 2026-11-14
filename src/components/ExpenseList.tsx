@@ -9,7 +9,11 @@ import {
   Clock,
   Calendar,
 } from 'lucide-react';
-import { ExpenseItem } from '../types/expense';
+import {
+  ExpenseItem,
+  isZeroDecimalCurrency,
+  roundToCurrency,
+} from '../types/expense';
 import { ExpenseUpdateEntry } from '../services/expenseService';
 import {
   formatCurrency,
@@ -52,7 +56,7 @@ function createDraftFromItem(item: ExpenseItem, currency: string): ExpenseDraft 
   return {
     title: item.title,
     amountStr:
-      currency === 'JPY'
+      isZeroDecimalCurrency(currency)
         ? String(Math.round(item.amount))
         : item.amount.toFixed(2),
     date: toDateInputValue(item.timestamp),
@@ -225,7 +229,7 @@ const ExpenseRow: React.FC<ExpenseRowProps> = ({
             />
             <input
               type="text"
-              inputMode="decimal"
+              inputMode={isZeroDecimalCurrency(currency) ? 'numeric' : 'decimal'}
               value={draft.amountStr}
               onChange={(e) =>
                 onDraftChange(item.id, {
@@ -429,7 +433,7 @@ export const ExpenseList: React.FC<ExpenseListProps> = ({
           continue;
         }
 
-        const nextAmount = Math.round(parsedAmount * 100) / 100;
+        const nextAmount = roundToCurrency(parsedAmount, currency);
         const nextHasTime = draft.time.trim().length > 0;
         const nextTimestamp = fromDateAndTimeInputs(
           draft.date,

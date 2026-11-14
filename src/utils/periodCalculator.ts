@@ -4,6 +4,7 @@ import {
   hasDateRange,
   isOneOffBudget,
   PeriodConfig,
+  isZeroDecimalCurrency,
   PeriodWindow,
 } from '../types/expense';
 
@@ -376,7 +377,7 @@ export function getExpenseQueryRange(
 export function formatCurrency(amount: number, currency = 'USD'): string {
   const safeAmount = Number.isFinite(amount) ? amount : 0;
   try {
-    const isZeroDecimal = currency === 'JPY';
+    const isZeroDecimal = isZeroDecimalCurrency(currency);
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
       currency,
