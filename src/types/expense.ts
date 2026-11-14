@@ -122,7 +122,7 @@ export const DEFAULT_USER_SETTINGS: UserSettings = {
   budget: 150,
   cadence: 'monthly',
   periodStartDay: 1,
-  currency: 'USD',
+  currency: 'SGD',
 };
 
 export function legacySettingsToBudget(
