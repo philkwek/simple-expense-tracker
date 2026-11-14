@@ -8,6 +8,7 @@
  */
 import type {
   BudgetCadence,
+  BudgetKind,
   BudgetReminders,
   ExpenseItem,
 } from '../../src/types/expense';
@@ -21,6 +22,7 @@ import {
 import {
   calculatePeriodWindow,
   getDailyAllowanceSummary,
+  getExpenseQueryRange,
 } from '../../src/utils/periodCalculator';
 
 /** A budget's reminder-relevant fields, parsed defensively from Firestore. */
@@ -30,6 +32,9 @@ export interface ParsedBudgetForReminder {
   cadence: BudgetCadence;
   periodStartDay: number;
   currency: string;
+  kind: BudgetKind;
+  startDate?: string;
+  endDate?: string;
   dailyTracking: boolean;
   reminders: BudgetReminders;
   nextReminderAt: number;
@@ -39,23 +44,31 @@ export interface ParsedBudgetForReminder {
 export type ReminderRanges =
   | {
       kind: 'daily';
+      /** Lower bound for spending sums (0 for one-off budgets). */
       cycleStart: number;
       todayStart: number;
+      /** Window end used for the last-day label. */
       cycleEnd: number;
+      /** Upper bound for spending sums; absent means cycleEnd. */
+      sumEnd?: number;
     }
   | {
       kind: 'cycle';
+      /** Lower bound for spending sums (0 for one-off budgets). */
       cycleStart: number;
+      /** Window end used for the last-day label. */
       cycleEnd: number;
+      /** Upper bound for spending sums; absent means cycleEnd. */
+      sumEnd?: number;
     };
 
 /** Pre-computed spending sums for one due budget. */
 export interface ReminderSums {
   /** Daily kind: spending in `[cycleStart, todayStart)`. */
   spentBefore?: number;
-  /** Daily kind: spending in `[todayStart, cycleEnd)`. */
+  /** Daily kind: spending in `[todayStart, sumEnd ?? cycleEnd)`. */
   spentToday?: number;
-  /** Cycle kind: spending in `[cycleStart, cycleEnd)`. */
+  /** Cycle kind: spending in `[cycleStart, sumEnd ?? cycleEnd)`. */
   spentInCycle?: number;
 }
 
@@ -100,11 +113,40 @@ function readCadence(value: unknown): BudgetCadence {
     : 'monthly';
 }
 
+const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+/** Returns a valid `"YYYY-MM-DD"` date string, or `null` for anything else. */
+function readDate(value: unknown): string | null {
+  if (typeof value !== 'string' || !DATE_PATTERN.test(value)) return null;
+  const [year, month, day] = value.split('-').map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    return null;
+  }
+  return value;
+}
+
+/** True for a dated one-off budget (both bound dates are present). */
+function isDatedOneOff(budget: ParsedBudgetForReminder): boolean {
+  return (
+    budget.kind === 'oneOff' &&
+    typeof budget.startDate === 'string' &&
+    typeof budget.endDate === 'string'
+  );
+}
+
 /**
  * Parses one `users/{uid}/budgets/{budgetId}` document into the subset needed
  * to plan a reminder. Returns `null` when the document cannot produce a
  * reminder: reminders missing/disabled, an unusable time zone, no valid
  * reminder time or no numeric `nextReminderAt`.
+ *
+ * One-off budgets without a valid start/end date pair (undated one-offs) never
+ * have reminders and therefore also return `null`.
  */
 export function parseBudgetForReminder(
   data: Record<string, unknown>,
@@ -128,6 +170,21 @@ export function parseBudgetForReminder(
   const periodStartDay = data.periodStartDay;
   const currency = data.currency;
 
+  // `kind` is one-off only when the field explicitly says so; a missing or
+  // unknown value means the legacy recurring behaviour.
+  const kind: BudgetKind = data.kind === 'oneOff' ? 'oneOff' : 'recurring';
+
+  let startDate: string | undefined;
+  let endDate: string | undefined;
+  if (kind === 'oneOff') {
+    const parsedStart = readDate(data.startDate);
+    const parsedEnd = readDate(data.endDate);
+    // Both dates or neither. An undated (or malformed) one-off has no schedule.
+    if (!parsedStart || !parsedEnd) return null;
+    startDate = parsedStart;
+    endDate = parsedEnd;
+  }
+
   return {
     name: typeof data.name === 'string' && data.name.length > 0 ? data.name : 'Budget',
     amount: typeof amount === 'number' && Number.isFinite(amount) && amount > 0 ? amount : 0,
@@ -139,6 +196,8 @@ export function parseBudgetForReminder(
           ? 0
           : 1,
     currency: typeof currency === 'string' && currency.length > 0 ? currency : 'USD',
+    kind,
+    ...(startDate && endDate ? { startDate, endDate } : {}),
     dailyTracking: data.dailyTracking === true,
     reminders: {
       enabled: true,
@@ -155,14 +214,24 @@ function computeRanges(
   nowMs: number,
 ): ReminderRanges {
   return withTimeZone(budget.reminders.timeZone, () => {
-    const window = calculatePeriodWindow(
-      { cadence: budget.cadence, periodStartDay: budget.periodStartDay },
-      new Date(nowMs),
-    );
-    const cycleStart = window.start.getTime();
+    const config = {
+      cadence: budget.cadence,
+      periodStartDay: budget.periodStartDay,
+      kind: budget.kind,
+      ...(isDatedOneOff(budget)
+        ? { startDate: budget.startDate, endDate: budget.endDate }
+        : {}),
+    };
+    const window = calculatePeriodWindow(config, new Date(nowMs));
+    const datedOneOff = isDatedOneOff(budget);
+    // One-off budgets count every expense regardless of date, so their sums
+    // start at the beginning of time. The window end still drives the label.
+    const sumRange = datedOneOff ? getExpenseQueryRange(config, window) : null;
+    const cycleStart = sumRange ? sumRange.start.getTime() : window.start.getTime();
     const cycleEnd = window.end.getTime();
+    const sumEnd = sumRange ? sumRange.end.getTime() : undefined;
 
-    if (budget.dailyTracking && budget.cadence !== 'daily') {
+    if (budget.dailyTracking && (datedOneOff || budget.cadence !== 'daily')) {
       const now = new Date(nowMs);
       const localMidnight = new Date(
         now.getFullYear(),
@@ -172,12 +241,19 @@ function computeRanges(
       return {
         kind: 'daily' as const,
         cycleStart,
-        todayStart: Math.max(localMidnight, cycleStart),
+        // A dated one-off's earlier spending reaches back to before its start.
+        todayStart: datedOneOff ? localMidnight : Math.max(localMidnight, cycleStart),
         cycleEnd,
+        ...(sumEnd !== undefined ? { sumEnd } : {}),
       };
     }
 
-    return { kind: 'cycle' as const, cycleStart, cycleEnd };
+    return {
+      kind: 'cycle' as const,
+      cycleStart,
+      cycleEnd,
+      ...(sumEnd !== undefined ? { sumEnd } : {}),
+    };
   });
 }
 
@@ -190,9 +266,13 @@ export function planBudgetReminder(
   nowMs: number,
 ): ReminderPlan {
   const stale = nowMs - budget.nextReminderAt > STALE_THRESHOLD_MS;
+  const dateRange = isDatedOneOff(budget)
+    ? { startDate: budget.startDate as string, endDate: budget.endDate as string }
+    : undefined;
   const nextReminderAt = computeNextReminderAt(
     budget.reminders,
     Math.max(nowMs, budget.nextReminderAt),
+    dateRange,
   );
 
   return {
@@ -208,7 +288,11 @@ function buildCycleMessage(
   cycleEnd: number,
   remaining: number,
 ): { title: string; body: string } {
-  if (budget.cadence === 'daily') {
+  const datedOneOff = isDatedOneOff(budget);
+
+  // One-off budgets always use whole-budget wording, even if their (unused)
+  // cadence happens to be daily.
+  if (!datedOneOff && budget.cadence === 'daily') {
     return buildReminderMessage({
       budgetName: budget.name,
       currency: budget.currency,
@@ -226,6 +310,7 @@ function buildCycleMessage(
       cycleEnd,
       budget.reminders.timeZone,
     ),
+    isOneOff: datedOneOff,
   });
 }
 
@@ -261,25 +346,36 @@ export function buildMessageFromSums(
   if (ranges.kind === 'daily') {
     const spentBefore = sums.spentBefore ?? 0;
     const spentToday = sums.spentToday ?? 0;
+    const datedOneOff = isDatedOneOff(budget);
 
     const expenses: ExpenseItem[] = [];
     if (spentBefore > 0) {
-      expenses.push(syntheticExpense('spent-before', spentBefore, ranges.cycleStart));
+      // For a dated one-off cycleStart is 0 (before the window), so the summary
+      // must be told to count earlier spending (pre-booked flights, etc.).
+      expenses.push(
+        syntheticExpense('spent-before', spentBefore, ranges.cycleStart),
+      );
     }
     if (spentToday > 0) {
       expenses.push(syntheticExpense('spent-today', spentToday, ranges.todayStart));
     }
 
     const summary = withTimeZone(budget.reminders.timeZone, () => {
-      const window = calculatePeriodWindow(
-        { cadence: budget.cadence, periodStartDay: budget.periodStartDay },
-        new Date(nowMs),
-      );
+      const config = {
+        cadence: budget.cadence,
+        periodStartDay: budget.periodStartDay,
+        kind: budget.kind,
+        ...(datedOneOff
+          ? { startDate: budget.startDate, endDate: budget.endDate }
+          : {}),
+      };
+      const window = calculatePeriodWindow(config, new Date(nowMs));
       return getDailyAllowanceSummary(
         budget.amount,
         window,
         expenses,
         new Date(nowMs),
+        datedOneOff ? { countEarlierSpending: true } : undefined,
       );
     });
 
