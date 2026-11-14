@@ -7,13 +7,15 @@ import {
   fromDateTimeLocalValue,
   getCycleDayCount,
   getDailyAllowanceSummary,
+  getExpenseQueryRange,
   groupExpensesByDay,
+  ONE_OFF_OPEN_END_MS,
   toDateInputValue,
   toDateTimeLocalValue,
   toLocalDateKey,
   toTimeInputValue,
 } from './periodCalculator';
-import { ExpenseItem, UserSettings } from '../types/expense';
+import { ExpenseItem, PeriodConfig, UserSettings } from '../types/expense';
 
 function makeExpense(amount: number, date: Date): ExpenseItem {
   return {
@@ -443,6 +445,218 @@ describe('Budget Period Calculator (periodCalculator.ts)', () => {
         expect(summary!.spentToday).toBe(20);
         expect(summary!.remainingToday).toBe(-10);
         expect(summary!.cycleRemaining).toBe(230); // 280 - 20 (Feb 1) - 30 (Feb 10)
+      });
+    });
+  });
+
+  describe('One-off budgets', () => {
+    const trip: PeriodConfig = {
+      cadence: 'monthly',
+      periodStartDay: 1,
+      kind: 'oneOff',
+      startDate: '2026-12-20',
+      endDate: '2026-12-28',
+    };
+
+    const shortTrip: PeriodConfig = {
+      ...trip,
+      endDate: '2026-12-22',
+    };
+
+    describe('calculatePeriodWindow', () => {
+      it('builds a dated window and reports an upcoming countdown', () => {
+        const window = calculatePeriodWindow(trip, new Date(2026, 11, 18, 9, 0, 0));
+
+        expect(window.start).toEqual(new Date(2026, 11, 20, 0, 0, 0, 0));
+        expect(window.end).toEqual(new Date(2026, 11, 29, 0, 0, 0, 0));
+        expect(window.label).toBe('Dec 20 – Dec 28');
+        expect(window.countdownLabel).toBe('Starts in 2 days');
+        expect(window.cadenceLabel).toBe('One-off');
+        expect(window.oneOff).toEqual({ dated: true, status: 'upcoming' });
+        expect(window.isCurrent).toBe(true);
+        expect(window.offset).toBe(0);
+
+        const tomorrow = calculatePeriodWindow(trip, new Date(2026, 11, 19, 9, 0, 0));
+        expect(tomorrow.countdownLabel).toBe('Starts tomorrow');
+      });
+
+      it('reports active countdowns including the last day', () => {
+        const firstDay = calculatePeriodWindow(trip, new Date(2026, 11, 20, 0, 0, 0));
+        expect(firstDay.oneOff).toEqual({ dated: true, status: 'active' });
+        expect(firstDay.countdownLabel).toBe('9 days left');
+
+        const middle = calculatePeriodWindow(trip, new Date(2026, 11, 24, 12, 0, 0));
+        expect(middle.oneOff).toEqual({ dated: true, status: 'active' });
+        expect(middle.countdownLabel).toBe('5 days left');
+
+        const lastDay = calculatePeriodWindow(trip, new Date(2026, 11, 28, 18, 0, 0));
+        expect(lastDay.oneOff).toEqual({ dated: true, status: 'active' });
+        expect(lastDay.countdownLabel).toBe('Last day');
+      });
+
+      it('reports ended once the end date is over', () => {
+        const window = calculatePeriodWindow(trip, new Date(2026, 11, 29, 0, 0, 0));
+        expect(window.countdownLabel).toBe('Ended');
+        expect(window.oneOff).toEqual({ dated: true, status: 'ended' });
+      });
+
+      it('labels a single-day budget without a range', () => {
+        const window = calculatePeriodWindow(
+          { ...trip, endDate: '2026-12-20' },
+          new Date(2026, 11, 20, 12, 0, 0),
+        );
+        expect(window.start).toEqual(new Date(2026, 11, 20, 0, 0, 0, 0));
+        expect(window.end).toEqual(new Date(2026, 11, 21, 0, 0, 0, 0));
+        expect(window.label).toBe('Dec 20');
+        expect(window.countdownLabel).toBe('Last day');
+        expect(getCycleDayCount(window)).toBe(1);
+      });
+
+      it('includes the end year when the range crosses into another year', () => {
+        const window = calculatePeriodWindow(
+          { ...trip, startDate: '2026-12-28', endDate: '2027-01-03' },
+          new Date(2026, 11, 15, 12, 0, 0),
+        );
+        expect(window.start).toEqual(new Date(2026, 11, 28, 0, 0, 0, 0));
+        expect(window.end).toEqual(new Date(2027, 0, 4, 0, 0, 0, 0));
+        expect(window.label).toBe('Dec 28 – Jan 3, 2027');
+      });
+
+      it('counts calendar days correctly across DST transitions', () => {
+        const springForward = calculatePeriodWindow(
+          { ...trip, startDate: '2026-03-07', endDate: '2026-03-10' },
+          new Date(2026, 2, 7, 12, 0, 0),
+        );
+        expect(getCycleDayCount(springForward)).toBe(4);
+
+        const fallBack = calculatePeriodWindow(
+          { ...trip, startDate: '2026-10-31', endDate: '2026-11-03' },
+          new Date(2026, 9, 31, 12, 0, 0),
+        );
+        expect(getCycleDayCount(fallBack)).toBe(4);
+      });
+
+      it('treats an undated one-off budget as one open-ended running total', () => {
+        const window = calculatePeriodWindow(
+          { cadence: 'daily', periodStartDay: 0, kind: 'oneOff' },
+          new Date(2026, 9, 14, 10, 0, 0),
+        );
+        expect(window.start).toEqual(new Date(0));
+        expect(window.end).toEqual(new Date(ONE_OFF_OPEN_END_MS));
+        expect(window.label).toBe('No end date');
+        expect(window.countdownLabel).toBe('Ongoing');
+        expect(window.cadenceLabel).toBe('One-off');
+        expect(window.oneOff).toEqual({ dated: false, status: 'active' });
+        expect(window.isCurrent).toBe(true);
+        expect(window.offset).toBe(0);
+      });
+
+      it('ignores cycleOffset for one-off budgets', () => {
+        const now = new Date(2026, 11, 24, 12, 0, 0);
+        const current = calculatePeriodWindow(trip, now, 0);
+        const shifted = calculatePeriodWindow(trip, now, -3);
+
+        expect(shifted.start).toEqual(current.start);
+        expect(shifted.end).toEqual(current.end);
+        expect(shifted.label).toBe(current.label);
+        expect(shifted.isCurrent).toBe(true);
+        expect(shifted.offset).toBe(0);
+        expect(shifted.oneOff).toEqual({ dated: true, status: 'active' });
+      });
+
+      it('keeps recurring behaviour unchanged when kind is explicitly recurring', () => {
+        const recurring: PeriodConfig = {
+          cadence: 'monthly',
+          periodStartDay: 1,
+          kind: 'recurring',
+        };
+        const window = calculatePeriodWindow(recurring, new Date(2026, 9, 14, 10, 0, 0));
+
+        expect(window.start).toEqual(new Date(2026, 9, 1, 0, 0, 0, 0));
+        expect(window.end).toEqual(new Date(2026, 10, 1, 0, 0, 0, 0));
+        expect(window.label).toBe('Oct 1 – Oct 31');
+        expect(window.oneOff).toBeUndefined();
+      });
+    });
+
+    describe('getExpenseQueryRange', () => {
+      it('returns an open range for one-off budgets and the window for recurring ones', () => {
+        const now = new Date(2026, 11, 24, 12, 0, 0);
+        const oneOffWindow = calculatePeriodWindow(trip, now);
+        expect(getExpenseQueryRange(trip, oneOffWindow)).toEqual({
+          start: new Date(0),
+          end: new Date(ONE_OFF_OPEN_END_MS),
+        });
+
+        const undated: PeriodConfig = {
+          cadence: 'weekly',
+          periodStartDay: 1,
+          kind: 'oneOff',
+        };
+        expect(getExpenseQueryRange(undated, calculatePeriodWindow(undated, now))).toEqual({
+          start: new Date(0),
+          end: new Date(ONE_OFF_OPEN_END_MS),
+        });
+
+        const recurring: PeriodConfig = {
+          cadence: 'weekly',
+          periodStartDay: 1,
+          kind: 'recurring',
+        };
+        const recurringWindow = calculatePeriodWindow(
+          recurring,
+          new Date(2026, 9, 14, 10, 0, 0),
+        );
+        expect(getExpenseQueryRange(recurring, recurringWindow)).toEqual({
+          start: recurringWindow.start,
+          end: recurringWindow.end,
+        });
+      });
+    });
+
+    describe('countEarlierSpending', () => {
+      const expenses = [
+        makeExpense(100, new Date(2026, 9, 1, 9, 0, 0)), // before the trip
+        makeExpense(30, new Date(2026, 11, 20, 9, 0, 0)), // day 1
+        makeExpense(20, new Date(2026, 11, 21, 9, 0, 0)), // day 2
+        makeExpense(999, new Date(2026, 11, 23, 9, 0, 0)), // at/after end
+      ];
+      const window = calculatePeriodWindow(shortTrip, new Date(2026, 11, 20, 12, 0, 0));
+
+      it('ignores spending before the window by default', () => {
+        const allowances = computeDailyAllowances(300, window, expenses);
+
+        expect(allowances.get('2026-12-20')).toBe(100); // 300 / 3
+        expect(allowances.get('2026-12-21')).toBe(135); // (300 - 30) / 2
+        expect(allowances.get('2026-12-22')).toBe(250); // (300 - 50) / 1
+      });
+
+      it('counts earlier spending as already spent before day 1 when requested', () => {
+        const allowances = computeDailyAllowances(300, window, expenses, {
+          countEarlierSpending: true,
+        });
+
+        expect(allowances.get('2026-12-20')).toBe(66.67); // (300 - 100) / 3
+        expect(allowances.get('2026-12-21')).toBe(85); // (300 - 130) / 2
+        expect(allowances.get('2026-12-22')).toBe(150); // 300 - 150
+      });
+
+      it('mirrors the option in getDailyAllowanceSummary cycle remaining', () => {
+        const now = new Date(2026, 11, 21, 12, 0, 0);
+
+        const withoutEarlier = getDailyAllowanceSummary(300, window, expenses, now);
+        expect(withoutEarlier!.allowance).toBe(135);
+        expect(withoutEarlier!.spentToday).toBe(20);
+        expect(withoutEarlier!.remainingToday).toBe(115);
+        expect(withoutEarlier!.cycleRemaining).toBe(250); // 300 - 30 - 20
+
+        const withEarlier = getDailyAllowanceSummary(300, window, expenses, now, {
+          countEarlierSpending: true,
+        });
+        expect(withEarlier!.allowance).toBe(85);
+        expect(withEarlier!.spentToday).toBe(20);
+        expect(withEarlier!.remainingToday).toBe(65);
+        expect(withEarlier!.cycleRemaining).toBe(150); // 300 - 100 - 30 - 20
       });
     });
   });

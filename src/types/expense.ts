@@ -129,6 +129,12 @@ export interface PeriodWindow {
   isCurrent: boolean;
   /** 0 = current active period, -1 = previous period, etc. */
   offset: number;
+  /** Present only for one-off budgets. */
+  oneOff?: {
+    dated: boolean;
+    /** dated: relative to startDate/endDate; undated: always 'active' */
+    status: 'upcoming' | 'active' | 'ended';
+  };
 }
 
 export interface DayExpenseGroup {
