@@ -826,8 +826,15 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
           {/* Bottom Sheet / Modal Surface */}
           <motion.div
             style={{ y: sheetY }}
-            className="w-full rounded-t-[28px] sm:rounded-[28px] material-glass bg-white/95 dark:bg-neutral-900/95 p-5 pb-8 sm:pb-6 shadow-2xl max-h-[90dvh] overflow-y-auto"
+            className="w-full rounded-t-[28px] sm:rounded-[28px] material-glass bg-white/95 dark:bg-neutral-900/95 px-5 pb-8 sm:pb-6 shadow-2xl sheet-height overflow-y-auto"
           >
+            {/* Grab handle + header stay pinned while the form scrolls beneath them */}
+            <div className="sticky top-0 z-20 -mx-5 px-5 pt-2 pb-3">
+            {/* Glass scroll edge, exactly the header's height; it fades out within the bottom padding */}
+            <div
+              aria-hidden="true"
+              className="scroll-edge pointer-events-none absolute inset-0 -z-10"
+            />
             {/* Grab Handle */}
             <div
               onPointerDown={handleSheetPointerDown}
@@ -835,13 +842,13 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
               onPointerUp={handleSheetPointerEnd}
               onPointerCancel={handleSheetPointerEnd}
               style={{ touchAction: 'none' }}
-              className="w-full pt-1 pb-3 flex justify-center cursor-grab active:cursor-grabbing"
+              className="w-full pt-1 pb-2 flex justify-center cursor-grab active:cursor-grabbing"
             >
               <div className="w-10 h-1.5 rounded-full bg-neutral-300 dark:bg-neutral-700" />
             </div>
 
             {/* Header */}
-            <div className="flex items-center justify-between mb-5 gap-3">
+            <div className="flex items-center justify-between gap-3">
               <div className="flex items-center gap-2.5 min-w-0">
                 <div className="w-9 h-9 shrink-0 rounded-2xl bg-[#007AFF]/[0.12] dark:bg-[#0A84FF]/20 text-[#007AFF] dark:text-[#0A84FF] flex items-center justify-center">
                   <HeaderIcon className="w-5 h-5" />
@@ -863,10 +870,11 @@ export const BudgetEditorModal: React.FC<BudgetEditorModalProps> = ({
                 type="button"
                 onClick={requestClose}
                 aria-label="Close budget editor"
-                className="pressable touch-target w-9 h-9 shrink-0 rounded-full bg-black/[0.05] dark:bg-white/[0.08] text-neutral-500 dark:text-neutral-300 flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#007AFF]/40"
+                className="pressable touch-target glass-control w-9 h-9 shrink-0 rounded-full text-neutral-600 dark:text-neutral-200 flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#007AFF]/40"
               >
                 <X className="w-4 h-4" />
               </button>
+            </div>
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-5">
