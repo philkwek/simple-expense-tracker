@@ -408,6 +408,7 @@ export function App() {
             expenses={expenses}
             currency={activeBudget.currency}
             dailyAllowances={dailyAllowances}
+            isOneOff={isOneOff}
             onBatchUpdateExpenses={handleBatchUpdateExpenses}
             onDeleteExpense={handleDeleteExpense}
           />
