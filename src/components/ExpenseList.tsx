@@ -231,10 +231,7 @@ const ExpenseRow: React.FC<ExpenseRowProps> = ({
               value={draft.amountStr}
               onChange={(e) =>
                 onDraftChange(item.id, {
-                  amountStr: e.target.value.replace(
-                    isZeroDecimalCurrency(currency) ? /[^0-9]/g : /[^0-9.]/g,
-                    '',
-                  ),
+                  amountStr: e.target.value.replace(/[^0-9.]/g, ''),
                 })
               }
               aria-label={`Edit cost for ${item.title}`}

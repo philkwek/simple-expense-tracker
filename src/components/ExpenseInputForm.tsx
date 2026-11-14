@@ -91,7 +91,7 @@ export const ExpenseInputForm: React.FC<ExpenseInputFormProps> = ({
   };
 
   const handleAmountChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const raw = e.target.value.replace(isWholeUnits ? /[^0-9]/g : /[^0-9.]/g, '');
+    const raw = e.target.value.replace(/[^0-9.]/g, '');
     const parts = raw.split('.');
     if (parts.length > 2) return;
     if (parts[1] && parts[1].length > 2) return;
