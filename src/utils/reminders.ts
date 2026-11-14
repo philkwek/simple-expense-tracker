@@ -214,16 +214,62 @@ export function zonedWallTimeToEpoch(
   return Math.max(firstCandidate, secondCandidate);
 }
 
+/** Parsed local calendar date, used for one-off reminder bounds. */
+interface LocalDateParts {
+  year: number;
+  month: number;
+  day: number;
+}
+
+/** Parses a strict `"YYYY-MM-DD"` calendar date, returning `null` when invalid. */
+function parseLocalDateParts(value: string): LocalDateParts | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day
+  ) {
+    return null;
+  }
+  return { year, month, day };
+}
+
+/** UTC-normalized day number for local Y/M/D parts (DST-safe). */
+function localDayNumber(parts: LocalDateParts): number {
+  return Math.round(Date.UTC(parts.year, parts.month - 1, parts.day) / 86400000);
+}
+
+/** Converts a UTC-normalized day number back to local Y/M/D parts. */
+function localDatePartsFromDayNumber(dayNumber: number): LocalDateParts {
+  const date = new Date(dayNumber * 86400000);
+  return {
+    year: date.getUTCFullYear(),
+    month: date.getUTCMonth() + 1,
+    day: date.getUTCDate(),
+  };
+}
+
 /**
  * Computes the next reminder instant strictly after `afterMs` for one budget.
  *
  * Returns `null` when reminders are missing/disabled, contain no valid times, or
  * name an invalid time zone. Calendar days are stepped in the target zone, so the
  * result stays correct across DST changes.
+ *
+ * With `dateRange`, only reminder instants whose local date in the budget's time
+ * zone falls within `[startDate, endDate]` (inclusive, both `"YYYY-MM-DD"`) are
+ * returned. The search starts at `startDate` even when `afterMs` is earlier, and
+ * returns `null` once no slot remains on or before `endDate`.
  */
 export function computeNextReminderAt(
   reminders: BudgetReminders | undefined | null,
   afterMs: number,
+  dateRange?: { startDate: string; endDate: string },
 ): number | null {
   if (!reminders || !reminders.enabled) return null;
 
@@ -234,6 +280,46 @@ export function computeNextReminderAt(
   if (!isValidTimeZone(timeZone)) return null;
 
   const start = getWallTimeParts(afterMs, timeZone);
+  const startDayNumber = localDayNumber(start);
+
+  if (dateRange) {
+    const rangeStart = parseLocalDateParts(dateRange.startDate);
+    const rangeEnd = parseLocalDateParts(dateRange.endDate);
+    if (!rangeStart || !rangeEnd) return null;
+
+    const rangeStartDay = localDayNumber(rangeStart);
+    const rangeEndDay = localDayNumber(rangeEnd);
+    if (rangeEndDay < rangeStartDay) return null;
+
+    // Start on the later of "today" and the range start, so a reminder weeks in
+    // the future is still found (the recurring 3-day lookahead does not apply).
+    const firstDay = Math.max(startDayNumber, rangeStartDay);
+    for (let dayNumber = firstDay; dayNumber <= rangeEndDay; dayNumber += 1) {
+      const day = localDatePartsFromDayNumber(dayNumber);
+      let earliest: number | null = null;
+      for (const time of times) {
+        const hour = Number(time.slice(0, 2));
+        const minute = Number(time.slice(3, 5));
+        const candidate = zonedWallTimeToEpoch(
+          day.year,
+          day.month,
+          day.day,
+          hour,
+          minute,
+          timeZone,
+        );
+        if (candidate <= afterMs) continue;
+        // Guard against DST gaps at midnight shifting the instant to another day.
+        const candidateDay = localDayNumber(
+          getWallTimeParts(candidate, timeZone),
+        );
+        if (candidateDay < rangeStartDay || candidateDay > rangeEndDay) continue;
+        if (earliest === null || candidate < earliest) earliest = candidate;
+      }
+      if (earliest !== null) return earliest;
+    }
+    return null;
+  }
 
   let next: number | null = null;
   // Check today plus up to three local days ahead. One day is normally enough,
@@ -262,7 +348,8 @@ export function computeNextReminderAt(
 /**
  * Builds the push-notification title and body for a budget reminder.
  * Negative `remaining` values mean the budget is over; amounts within half a
- * cent of zero are treated as zero.
+ * cent of zero are treated as zero. `isOneOff` drops the "this cycle" wording
+ * from the over-budget message, since one-off budgets never reset.
  */
 export function buildReminderMessage(input: {
   budgetName: string;
@@ -270,8 +357,9 @@ export function buildReminderMessage(input: {
   kind: 'today' | 'cycle';
   remaining: number;
   cycleLastDayLabel?: string;
+  isOneOff?: boolean;
 }): { title: string; body: string } {
-  const { budgetName, currency, kind, remaining, cycleLastDayLabel } = input;
+  const { budgetName, currency, kind, remaining, cycleLastDayLabel, isOneOff } = input;
   const absolute = Math.abs(remaining);
   const isZero = absolute < 0.005;
   const effectiveRemaining = isZero ? 0 : remaining;
@@ -291,6 +379,13 @@ export function buildReminderMessage(input: {
       ? `${money} left until ${cycleLastDayLabel}. Anything to log?`
       : `${money} left this cycle. Anything to log?`;
     return { title, body };
+  }
+
+  if (isOneOff) {
+    return {
+      title,
+      body: `${money} over budget. Anything to log?`,
+    };
   }
 
   return {

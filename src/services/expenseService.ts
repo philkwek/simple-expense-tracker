@@ -267,7 +267,12 @@ function budgetToDoc(budget: Budget) {
  * stale value is never carried over. Removes the field when reminders cannot fire.
  */
 function setNextReminderAt(budget: Budget, now: number): Budget {
-  const nextReminderAt = computeNextReminderAt(budget.reminders, now);
+  // Dated one-off budgets only remind within their inclusive local date range.
+  const dateRange =
+    budget.kind === 'oneOff' && budget.startDate && budget.endDate
+      ? { startDate: budget.startDate, endDate: budget.endDate }
+      : undefined;
+  const nextReminderAt = computeNextReminderAt(budget.reminders, now, dateRange);
   if (nextReminderAt === null) {
     delete budget.nextReminderAt;
   } else {

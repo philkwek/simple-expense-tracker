@@ -164,10 +164,17 @@ function normalizeBudgetReminders(value: unknown): BudgetReminders | undefined {
 function budgetDocFields(budget: BudgetDocLike, now: number) {
   const createdAt = normalizeTime(budget.createdAt, now);
   const reminders = normalizeBudgetReminders(budget.reminders);
-  const nextReminderAt = computeNextReminderAt(reminders, now);
   const isOneOff = budget.kind === 'oneOff';
   const hasDates =
     isOneOff && typeof budget.startDate === 'string' && typeof budget.endDate === 'string';
+  // Dated one-off budgets only remind within their inclusive local date range.
+  const dateRange = hasDates
+    ? {
+        startDate: budget.startDate as string,
+        endDate: budget.endDate as string,
+      }
+    : undefined;
+  const nextReminderAt = computeNextReminderAt(reminders, now, dateRange);
   return {
     kind: isOneOff ? 'oneOff' : 'recurring',
     ...(hasDates ? { startDate: budget.startDate, endDate: budget.endDate } : {}),
